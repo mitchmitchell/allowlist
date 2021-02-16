@@ -1,0 +1,155 @@
+#!/usr/bin/php -q
+<?php
+
+/*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+ *
+ * Script: cmcheck.php
+ *
+ * Latest version: included in allowlist module, based on script by Lorne Gaetz
+ * Lorne's Latest version: https://gist.github.com/lgaetz/7cab1bc6b6266ba658d5dd90d2e919eb
+ *
+ * Usage: Asterisk AGI file to check number against a FreePBX Contact Manager group (or all CM groups)
+ *        and set channel var indicating if number is present or not.
+ *        Originally developed for FreePBX 14, save in /var/lib/asterisk/agi-bin 
+ *
+ *        AGI(cmcheck.php,<contact_nuumber>[,<group_name>,<asterisk_var>])
+ *
+ *           contact_nuumber - Caller ID number to lookup
+ *           group_name - Name of Contact Management group or null to check all groups
+ *           asterisk_var - asterisk variable set with either "true", "false" or error, defaults to allowlist
+ *
+ *         Use with FreePBX Custom Destination with a gosub string of "check-allowlist,s,1" without quotes
+ *         and something like the following in extensions_custom.conf:
+ *
+ *           [check-allowlist]
+ *           exten => s,1,Noop(Entering user defined context [check-allowlist] in extensions_custom.conf)
+ *           exten => s,n,AGI(cmcheck.php,${CALLERID(number)})
+ *           exten => s,n,gotoif($["${allowlist}"="false"]?ivr-1,s,1)    ; edit for wherever non-allowlisted calleres should go
+ *           exten => s,n,Return
+ *
+ * License: GNU/GPL3+
+ *
+ * History:
+ *         2019-01-13   First commit by lgaetz - not fully functional
+ *         2019-01-19   add AGI components
+ *         2019-01-27   updated usage text
+ *         2021-02-14   modified for use with allowlist FreePBX module
+ *
+ *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***/
+
+// initialize vars
+$found = false;
+
+// FreePBX Bootstrap environment
+include '/etc/freepbx.conf';
+$FreePBX = FreePBX::Create();
+
+// AGI Class
+$agidir = FreePBX::Config()->get('ASTAGIDIR');
+require_once $agidir."/phpagi.php";
+$AGI = new AGI();
+
+if (!$AGI || !$FreePBX) {
+	// something went wrong
+	exit;
+}
+
+// TODO add check to see if Contact Management is installed, and quit if not
+
+// script requires a contact number - exit if not provided
+if (isset($argv[1])) {
+	$contact_number = $argv[1];
+	//	TODO - do we need to validate input?
+	agi_verbose("\$contact_number = $contact_number");
+} else {
+	agi_verbose("No arguements provided, exiting.");
+	$AGI->set_variable($channel_var, 'error');	
+	exit;
+}
+// get group name argument
+if (strlen($argv[2])!=0) {
+	$group_name = $argv[2];
+	$lookup_all_groups=false;
+} else {
+	$lookup_all_groups=true;
+}
+agi_verbose("\$lookup_all_groups = $lookup_all_groups");
+
+// get asterisk channel var name to store result
+if (strlen($argv[3])!=0) {
+	$channel_var = $argv[3];
+} else {
+	$channel_var = "allowlist";
+}
+agi_verbose("\$channel_var = $channel_var");
+
+if ($lookup_all_groups) {
+	agi_verbose("Searching all Contact Mgr groups for $contact_number");	
+	$search=$FreePBX->Contactmanager->getNamebyNumber($contact_number);    
+	if (strlen($search['id'])!=0) {
+		// contact found
+		$found = true;
+	}
+} else {
+	agi_verbose("Searching Contact Mgr group $group_name for $contact_number");
+	// get contact group id from name
+	$group_id=getGroupIDFromName($group_name);
+
+	// if contact group exists
+	if (isset($group_id)) {
+		// get list of all numbers in group
+		$group_numbers = AllNumbersInGroup($group_id);
+		
+		// determine if contact exists in group
+		if (in_array($contact_number,$group_numbers)) {
+			$found=true;
+		}
+	}
+}
+
+If ($found) {
+	agi_verbose("Found $contact_number in Contact Mgr");
+	agi_verbose("Setting Asterisk channel var $channel_var to true");
+	$AGI->set_variable($channel_var, 'true');
+} else {
+	agi_verbose("$contact_number not found in Contact Mgr");
+	agi_verbose("Setting Asterisk channel var $channel_var to false");
+	$AGI->set_variable($channel_var, 'false');	
+}
+
+// helper functions
+
+// returns group id from provided name or null if it doesn't exist
+function getGroupIDFromName ($group_name) {
+	$FreePBX = FreePBX::Create();
+	$groups=$FreePBX->Contactmanager->getGroups();   // get array of all cm groups
+	foreach ($groups as $group) {
+		if ($group['name'] == $group_name) {
+			// group exists
+			Return($group['id']);
+		} 
+	}
+	Return null;
+}
+
+// returns simple keyless array of all phone numbers in specified group
+function AllNumbersInGroup($group_id) {
+	$FreePBX = FreePBX::Create();
+	
+	// get all number details from group
+	$number_details=$FreePBX->Contactmanager->getNumbersByGroupID($group_id);
+	
+	// create simple array of all numbers in group
+	$numbers = array();
+	foreach (array_values($number_details) as $entry) {
+		if (isset($entry['number'])) {
+			$numbers[] = $entry['number'];
+		}
+	}
+	return $numbers;
+}
+ 
+function agi_verbose($string, $level=3) {
+	global $AGI;
+	$AGI->verbose($string, $level);
+}

@@ -1,0 +1,239 @@
+# This file is part of FreePBX.
+#
+# For licensing information, please see the file named LICENSE located in the module directory
+#
+# FreePBX language template for allowlist
+# Copyright (C) 2008-2015 Sangoma, Inc.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2019-01-29 15:49+0530\n"
+"PO-Revision-Date: 2017-03-08 21:01+0200\n"
+"Last-Translator: Kingvoice <suporte@kingvoice.com.br>\n"
+"Language-Team: Portuguese (Brazil) <http://weblate.freepbx.org/projects/"
+"freepbx/allowlist/pt_BR/>\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Generator: Weblate 2.4\n"
+
+#: views/blgrid.php:11
+msgid "Actions"
+msgstr "Ações"
+
+#: views/addnumber.php:7
+msgid "Add or replace entry"
+msgstr "Adicionar ou substituir elemento"
+
+#: assets/js/allowlist.js:56
+#, perl-format
+msgid "Added %s to the allowlist."
+msgstr "Adicionar %s para a lista negra."
+
+#: assets/js/allowlist.js:40
+msgid "Adding..."
+msgstr "Adicionando..."
+
+#: Allowlist.class.php:21
+msgid ""
+"Adds a number to the Allowlist Module.  All calls from that number to the "
+"system will be allowed to proceed normally.  Manage these in the Allowlist "
+"module."
+msgstr ""
+"Adiciona um número ao Módulo da Lista Negra. Todas as chamadas desse número "
+"para o sistema receberão uma gravação de desconexão. Gerencie-os no módulo "
+"de Lista Negra."
+
+#: Allowlist.class.php:23
+msgid ""
+"Adds the last caller to the Allowlist Module.  All calls from that number to "
+"the system will be allowed to proceed normally."
+msgstr ""
+"Adiciona o último usuário chamador ao Módulo de Lista Negra. Todas as "
+"chamadas desse número para o sistema receberão uma gravação de desconexão."
+
+#: allowlist.i18n.php:6
+msgid "Admin"
+msgstr "Admin"
+
+#: assets/js/allowlist.js:70
+msgid "Are you sure you want to delete this item?"
+msgstr ""
+
+#: Allowlist.class.php:20 Allowlist.class.php:542 allowlist.i18n.php:4
+#: allowlist.i18n.php:10 views/general.php:24
+msgid "Allowlist"
+msgstr "Lista Negra"
+
+#: views/general.php:12
+msgid "Allowlist Module"
+msgstr "Módulo de Lista Negra"
+
+#: views/blgrid.php:3
+msgid "Allow Number"
+msgstr "Número da Lista Negra"
+
+#: Allowlist.class.php:17
+msgid "Allowlist a number"
+msgstr "Adicionar um número à lista negra"
+
+#: Allowlist.class.php:19
+msgid "Allowlist the last caller"
+msgstr "Adicionar o último usuário chamador à lista negra"
+
+#: views/general.php:56
+msgid "Block Unknown/Blocked Caller ID"
+msgstr "Bloquear ID do Chamador Desconhecido/Bloqueado"
+
+#: views/general.php:46
+msgid "Bulk Handler"
+msgstr "Movimentação em Massa"
+
+#: views/addnumber.php:75
+msgid "Call Date/Time"
+msgstr "Data/Hora Chamada"
+
+#: views/addnumber.php:69
+msgid "Call Log"
+msgstr "Registro de Chamadas"
+
+#: views/general.php:71
+msgid "Check here to catch Unknown/Blocked Caller ID"
+msgstr "Marque aqui para capturar o ID do Chamador Desconhecido/Bloqueado"
+
+#: views/general.php:95
+msgid "Choose where non allowlisted calls go"
+msgstr "Escolha onde as chamadas na lista negra irão"
+
+#: views/addnumber.php:57
+msgid "Close"
+msgstr "Fechar"
+
+#: Allowlist.class.php:170
+msgid "Could not find file after upload"
+msgstr "Não foi possível localizar o arquivo após o upload"
+
+#: views/blgrid.php:2
+msgid "Delete Selected"
+msgstr "Apagar Selecionados"
+
+#: Allowlist.class.php:552 views/addnumber.php:40 views/blgrid.php:10
+msgid "Description"
+msgstr "Descrição"
+
+#: Allowlist.class.php:552
+msgid "Description of number allowlisted"
+msgstr "Descrição do número na lista negra"
+
+#: views/general.php:83
+msgid "Destination for Non AllowListed Calls"
+msgstr "Destino das Chamadas na Lista Negra"
+
+#: assets/js/allowlist.js:54
+msgid "Entry Updated"
+msgstr "Entrada Atualizada"
+
+#: views/general.php:29
+msgid "Import/Export"
+msgstr "Importar/Exportar"
+
+#: Allowlist.class.php:543
+msgid "Import/Export Caller Allowlist"
+msgstr "Importar/Exportar Lista Negra de Usuários Chamadores"
+
+#: views/general.php:63
+msgid "No"
+msgstr "Não"
+
+#: Allowlist.class.php:189
+msgid "No Entries to export"
+msgstr "Sem Elementos para exportar"
+
+#: views/blgrid.php:9
+msgid "Number"
+msgstr "Número"
+
+#: views/addnumber.php:18
+msgid "Number/CallerID"
+msgstr "Número/ID do Chamador"
+
+#: assets/js/allowlist.js:35
+msgid "Number/CallerID cannot be blank"
+msgstr "Número/ID do Chamador não pode estar em branco"
+
+#: Allowlist.class.php:62
+msgid "Numbers Deleted"
+msgstr "Números Apagados"
+
+#: Allowlist.class.php:551
+msgid "Phone Number"
+msgstr "Número do Telefone"
+
+#: Allowlist.class.php:569
+msgid "Phone Number Required"
+msgstr "Necessário o Número de Telefone"
+
+#: Allowlist.class.php:18
+msgid "Remove a number from the allowlist"
+msgstr "Remover um número da lista negra"
+
+#: Allowlist.class.php:22
+msgid "Removes a number from the Allowlist Module"
+msgstr "Remove um número do Módulo de Lista Negra"
+
+#: Allowlist.class.php:404
+msgid "Reset"
+msgstr "Reiniciar"
+
+#: assets/js/allowlist.js:51
+msgid "Save Changes"
+msgstr "Salvar Mudanças"
+
+#: views/addnumber.php:58
+msgid "Save changes"
+msgstr "Salvar mudanças"
+
+#: views/general.php:34
+msgid "Settings"
+msgstr "Configurações"
+
+#: Allowlist.class.php:410
+msgid "Submit"
+msgstr "Enviar"
+
+#: Allowlist.class.php:168
+msgid "Sucessfully imported all entries"
+msgstr "Todos os elementos importados com sucesso"
+
+#: Allowlist.class.php:173
+msgid "The file must be in CSV format!"
+msgstr "O arquivo precisa estar em formato CSV!"
+
+#: Allowlist.class.php:551
+msgid "The number as it appears in the callerid display"
+msgstr "O número tal como aparece no visor de ID de chamadas"
+
+#: Allowlist.class.php:148
+msgid "There was an error uploading the file"
+msgstr "Ocorreu um erro ao carregar o arquivo"
+
+#: views/general.php:44
+msgid "This functionality is now part of the Bulk Handler Module"
+msgstr "Esta funcionalidade agora faz parte do Módulo de Gerenciador de Carga"
+
+#: allowlist.i18n.php:8
+msgid "This module is used to manage a system wide list of blocked callers"
+msgstr ""
+"Este módulo é utilizado para gerenciar uma lista de usuários chamadores "
+"bloqueados em todo o sistema"
+
+#: views/general.php:61
+msgid "Yes"
+msgstr "Sim"
+
+#~ msgid "Delete"
+#~ msgstr "Apagar"

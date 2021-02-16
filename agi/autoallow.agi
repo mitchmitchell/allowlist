@@ -1,0 +1,33 @@
+#!/usr/bin/php -q
+<?php
+
+// FreePBX Bootstrap environment
+include '/etc/freepbx.conf';
+$FreePBX = FreePBX::Create();
+
+// AGI Class
+$agidir = FreePBX::Config()->get('ASTAGIDIR');
+require_once $agidir."/phpagi.php";
+$AGI = new AGI();
+
+if (!$AGI || !$FreePBX) {
+	// something went wrong
+	exit;
+}
+
+$AGI->verbose("script starting.");
+
+$dnid = substr($AGI->request[agi_dnid],-10,10);
+ 
+$res = $AGI->database_get('allowlist',$dnid);
+
+$AGI->verbose("Received from database get: " . $res['result']);
+
+if ($res['result'] == 0) { // dialed number is not part of allowlist so add it
+   $done = $AGI->database_put('allowlist',$dnid,'automatically added');
+   if ($done['result'] == 0) {
+      $AGI->verbose("could not add $dnid to allowlist.");
+   }
+}
+
+$AGI->verbose("script complete.");

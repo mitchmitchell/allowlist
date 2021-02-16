@@ -1,0 +1,654 @@
+<?php
+namespace FreePBX\modules;
+// vim: set ai ts=4 sw=4 ft=php expandtab:
+//	License for all code of this FreePBX module can be found in the license file inside the module directory
+//      Copyright 2021 Magnolia Manor Networks
+
+class Allowlist implements \BMO {
+	public function __construct($freepbx = null){
+		if ($freepbx == null) {
+			throw new \RuntimeException('Not given a FreePBX Object');
+		}
+		$this->FreePBX = $freepbx;
+		$this->astman = $this->FreePBX->astman;
+
+		if (false) {
+			_('Allow a number');
+			_('Remove a number from the allowlist');
+			_('Allow the last caller');
+			_('Allowlist');
+			_('Adds a number to the Allowlist Module.  All calls from that number to the system will be allowed to proceed normally.  Manage these in the Allowlist module.');
+			_('Removes a number from the Allowlist Module');
+			_('Adds the last caller to the Allowlist Module.  All calls from that number to the system will be allowed to proceed normally.');
+		}
+	}
+	public function ajaxRequest($req, &$setting){
+		switch ($req) {
+			case 'add':
+			case 'edit':
+			case 'del':
+			case 'bulkdelete':
+			case 'getJSON':
+			case 'calllog':
+			return true;
+			break;
+		}
+		return false;
+	}
+
+	public function ajaxHandler(){
+
+		$request = $_REQUEST;
+		if(!empty($_REQUEST['oldval']) && $_REQUEST['command'] == 'add' ){
+			$_REQUEST['command'] = 'edit';
+		}
+		switch ($_REQUEST['command']) {
+			case 'add':
+				$this->numberAdd($request);
+				return array('status' => true);
+			break;
+			case 'edit':
+				$this->numberDel($request['oldval']);
+				$this->numberAdd($request);
+				return array('status' => true);
+			break;
+			case 'bulkdelete':
+				$numbers = isset($_REQUEST['numbers'])?$_REQUEST['numbers']:array();
+				$numbers = json_decode($numbers, true);
+				foreach ($numbers as $number) {
+					$this->numberDel($number);
+				}
+				return array('status' => 'true', 'message' => _("Numbers Deleted"));
+			break;
+			case 'del':
+				$ret = $this->numberDel($request['number']);
+				return array('status' => $ret);
+			break;
+			case 'calllog':
+				$number = $request['number'];
+				$sql = 'SELECT calldate FROM asteriskcdrdb.cdr WHERE src = ?';
+				$stmt = \FreePBX::Database()->prepare($sql);
+				$stmt->execute(array($number));
+				$ret = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+				return $ret;
+			break;
+			case 'getJSON':
+			switch($request['jdata']){
+				case 'grid':
+					$ret = array();
+					$allowlist = $this->getAllowlist();
+					foreach($allowlist as $item){
+						$number = $item['number'];
+						$description = $item['description'];
+						if($number == 'dest' || $number == 'blocked' || $number == 'cmcallers' || $number == 'autoadd'){
+							continue;
+						}else{
+							$ret[] = array('number' => $number, 'description' => $description);
+						}
+					}
+				return $ret;
+				break;
+			}
+			break;
+		}
+	}
+
+	//BMO Methods
+	public function install() {
+		$fcc = new \featurecode('allowlist', 'allowlist_add');
+		$fcc->setDescription('Allowlist a number');
+		$fcc->setHelpText('Adds a number to the Allowlist Module.  All calls from that number to the system will will be allowed to proceed normally.  Manage these in the Allowlist module.');
+		$fcc->setDefault('*36');
+		$fcc->setProvideDest();
+		$fcc->update();
+		unset($fcc);
+
+		$fcc = new \featurecode('allowlist', 'allowlist_remove');
+		$fcc->setDescription('Remove a number from the allowlist');
+		$fcc->setHelpText('Removes a number from the Allowlist Module');
+		$fcc->setDefault('*37');
+		$fcc->setProvideDest();
+		$fcc->update();
+		unset($fcc);
+		$fcc = new \featurecode('allowlist', 'allowlist_last');
+		$fcc->setDescription('Allowlist the last caller');
+		$fcc->setHelpText('Adds the last caller to the Allowlist Module.  All calls from that number to the system will be allowed to proceed normally.');
+		$fcc->setDefault('*38');
+		$fcc->update();
+		unset($fcc);
+	}
+	public function uninstall(){}
+
+	public function backup(){}
+
+	public function restore($backup){}
+
+	public function doConfigPageInit($page) {
+		$dispnum = 'allowlist';
+		$astver = $this->FreePBX->Config->get('ASTVERSION');
+		$request = $_REQUEST;
+
+		if (isset($request['goto0'])) {
+			$destination = $request[$request['goto0'].'0'];
+		}
+		isset($request['action']) ? $action = $request['action'] : $action = '';
+		isset($request['oldval']) ? $action = 'edit' : $action;
+		isset($request['number']) ? $number = $request['number'] : $number = '';
+		isset($request['description']) ? $description = $request['description'] : $description = '';
+
+		if (isset($request['action'])) {
+			switch ($action) {
+				case 'settings':
+					$this->destinationSet($destination);
+					$this->blockunknownSet($request['blocked']);
+					$this->allowcmcallersSet($request['cmcallers']);
+					$this->outboundautoaddSet($request['autoadd']);
+				break;
+				case 'import':
+					if ($_FILES['file']['error'] > 0) {
+						echo '<div class="alert alert-danger" role="alert">'._('There was an error uploading the file').'</div>';
+					} else {
+						if (pathinfo($_FILES['allowlistfile']['name'], PATHINFO_EXTENSION) == 'csv') {
+							$path = sys_get_temp_dir().'/'.$_FILES['allowlistfile']['name'];
+							move_uploaded_file($_FILES['allowlistfile']['tmp_name'], $path);
+							if (file_exists($path)) {
+								ini_set('auto_detect_line_endings', true);
+								$handle = fopen($path, 'r');
+								set_time_limit(0);
+								while (($data = fgetcsv($handle)) !== false) {
+									if ($data[0] == 'number' && $data[1] == 'description') {
+										continue;
+									}
+									allowlist_add(array(
+										'number' => $data[0],
+										'description' => $data[1],
+										'blocked' => 0,
+									));
+								}
+								unlink($path);
+								echo '<div class="alert alert-success" role="alert">'._('Sucessfully imported all entries').'</div>';
+							} else {
+								echo '<div class="alert alert-danger" role="alert">'._('Could not find file after upload').'</div>';
+							}
+						} else {
+							echo '<div class="alert alert-danger" role="alert">'._('The file must be in CSV format!').'</div>';
+						}
+					}
+				break;
+				case 'export':
+					$list = $this->getAllowlist();
+					if (!empty($list)) {
+						header('Content-Type: text/csv; charset=utf-8');
+						header('Content-Disposition: attachment; filename=allowlist.csv');
+						$output = fopen('php://output', 'w');
+						fputcsv($output, array('number', 'description'));
+						foreach ($list as $l) {
+							fputcsv($output, $l);
+						}
+					} else {
+						header('HTTP/1.0 404 Not Found');
+						echo _('No Entries to export');
+					}
+					die();
+				break;
+			}
+		}
+	}
+
+	public function myDialplanHooks(){
+		return 400;
+	}
+
+	public function doDialplanHook(&$ext, $engine, $priority) {
+		$modulename = 'allowlist';
+		//Add
+		$fcc = new \featurecode($modulename, 'allowlist_add');
+		$addfc = $fcc->getCodeActive();
+		unset($fcc);
+		//Delete
+		$fcc = new \featurecode($modulename, 'allowlist_remove');
+		$delfc = $fcc->getCodeActive();
+		unset($fcc);
+		//Last
+		$fcc = new \featurecode($modulename, 'allowlist_last');
+		$lastfc = $fcc->getCodeActive();
+		unset($fcc);
+		$id = 'app-allowlist';
+		$c = 's';
+		$ext->addInclude('from-internal-additional', $id); // Add the include from from-internal
+		$ext->add($id, $c, '', new \ext_macro('user-callerid'));
+		$id = 'app-allowlist-check';
+		// LookupAllowList doesn't seem to match empty astdb entry for "allowlist/", so we
+		// need to check for the setting and if set, send to the allowlisted area
+		// The gotoif below is not a typo.  For some reason, we've seen the CID number set to Unknown or Unavailable
+		// don't generate the dialplan if they are not using the function
+		//
+		if ($this->astman->database_get('allowlist', 'blocked') == '1') {
+			$ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unknown"]', 'check-blocked'));
+			$ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unavailable"]', 'check-blocked'));
+			$ext->add($id, $c, '', new \ext_gotoif('$["foo${CALLERID(number)}" = "foo"]', 'check-blocked', 'check'));
+			$ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB(allowlist/blocked)}" = "1"]', 'nonallowlisted'));
+		}
+
+		$ext->add($id, $c, 'check', new \ext_gotoif('$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'check-done'));
+		$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
+		$ext->add($id, $c, '', new \ext_return(''));
+		$ext->add($id, $c, 'check-done', new \ext_noop('regular allowlist checking complete'));
+
+		if ($this->astman->database_get('allowlist', 'cmcallers') == '1') {
+			$ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB_EXISTS(allowlist/cmcallers)}" = "0"]', 'nonallowlisted'));
+			$ext->add($id, $c, 'cmcheck', new \ext_agi(__DIR__ . '/agi/cmallowlist.agi,${CALLERID(num)},"",cmallowlisted'));
+			$ext->add($id, $c, '', new \ext_gotoif('$["${cmallowlisted}"="false"]', 'nonallowlisted'));
+			$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
+			$ext->add($id, $c, '', new \ext_return(''));
+			$ext->add($id, $c, 'cmcheck-done', new \ext_noop('contact manager allowlist checking complete'));
+		}
+
+		$ext->add($id, $c, 'nonallowlisted', new \ext_answer(''));
+		$ext->add($id, $c, '', new \ext_set('ALDEST', '${DB(allowlist/dest)}'));
+		$ext->add($id, $c, '', new \ext_gotoif('$["${alreturnhere}"="1"]', 'returnto'));
+		$ext->add($id, $c, '', new \ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}', 'returnto'));
+		$ext->add($id, $c, 'returnto', new \ext_return());
+
+		//Dialplan for add
+		if(!empty($addfc)){
+			$ext->add('app-allowlist', $addfc, '', new \ext_goto('1', 's', 'app-allowlist-add'));
+		}
+		$id = 'app-allowlist-add';
+		$c = 's';
+		$ext->add($id, $c, '', new \ext_answer());
+		$ext->add($id, $c, '', new \ext_macro('user-callerid'));
+		$ext->add($id, $c, '', new \ext_wait(1));
+		$ext->add($id, $c, '', new \ext_set('NumLoops', 0));
+		$ext->add($id, $c, 'start', new \ext_digittimeout(5));
+		$ext->add($id, $c, '', new \ext_responsetimeout(10));
+		$ext->add($id, $c, '', new \ext_read('allownr', 'enter-num-allowlist&vm-then-pound'));
+		$ext->add($id, $c, '', new \ext_saydigits('${allownr}'));
+		// i18n - Some languages need this is a different format. If we don't
+		// know about the language, assume english
+		$ext->add($id, $c, '', new \ext_gosubif('$[${DIALPLAN_EXISTS('.$id.',${CHANNEL(language)})}]', $id.',${CHANNEL(language)},1', $id.',en,1'));
+		// en - default
+		$ext->add($id, 'en', '', new \ext_digittimeout(1));
+		$ext->add($id, 'en', '', new \ext_read('confirm','if-correct-press&digits/1&to-enter-a-diff-number&press&digits/2'));
+		$ext->add($id, 'en', '', new \ext_return());
+		// ja
+		$ext->add($id, 'ja', '', new \ext_digittimeout(1));
+		$ext->add($id, 'ja', '', new \ext_read('if-correct-press&digits/1&pleasepress'));
+		$ext->add($id, 'ja', '', new \ext_return());
+
+		$ext->add($id, $c, '', new \ext_gotoif('$[ "${confirm}" = "1" ]','app-allowlist-add,1,1'));
+		$ext->add($id, $c, '', new \ext_gotoif('$[ "${confirm}" = "2" ]','app-allowlist-add,2,1'));
+		$ext->add($id, $c, '', new \ext_goto('app-allowlist-add-invalid,s,1'));
+
+		$c = '1';
+		$ext->add($id, $c, '', new \ext_gotoif('$[ "${allownr}" != ""]', '', 'app-allowlist-add-invalid,s,1'));
+		$ext->add($id, $c, '', new \ext_set('DB(allowlist/${allownr})', 1));
+		$ext->add($id, $c, '', new \ext_playback('num-was-successfully&added'));
+		$ext->add($id, $c, '', new \ext_wait(1));
+		$ext->add($id, $c, '', new \ext_hangup());
+
+ 		$c = '2';
+	        $ext->add($id, $c, '', new \ext_set('NumLoops', '$[${NumLoops} + 1]'));
+	        $ext->add($id, $c, '', new \ext_gotoif('$[${NumLoops} < 3]', 'app-allowlist-add,s,start'));
+	        $ext->add($id, $c, '', new \ext_playback('sorry-youre-having-problems&goodbye'));
+	        $ext->add($id, $c, '', new \ext_hangup());
+
+
+		$id = 'app-allowlist-add-invalid';
+		$c = 's';
+		$ext->add($id, $c, '', new \ext_set('NumLoops', '$[${NumLoops} + 1]'));
+		$ext->add($id, $c, '', new \ext_playback('pm-invalid-option'));
+		$ext->add($id, $c, '', new \ext_gotoif('$[${NumLoops} < 3]', 'app-allowlist-add,s,start'));
+		$ext->add($id, $c, '', new \ext_playback('sorry-youre-having-problems&goodbye'));
+		$ext->add($id, $c, '', new \ext_hangup());
+
+		//Del
+		if(!empty($delfc)){
+			$ext->add('app-allowlist', $delfc, '', new \ext_goto('1', 's', 'app-allowlist-remove'));
+		}
+		$id = 'app-allowlist-remove';
+		$c = 's';
+		$ext->add($id, $c, '', new \ext_answer());
+		$ext->add($id, $c, '', new \ext_macro('user-callerid'));
+		$ext->add($id, $c, '', new \ext_set('NumLoops', 0));
+	        $ext->add($id, $c, '', new \ext_wait(1));
+		$ext->add($id, $c, 'start', new \ext_digittimeout(5));
+		$ext->add($id, $c, '', new \ext_responsetimeout(10));
+		$ext->add($id, $c, '', new \ext_read('allownr', 'entr-num-rmv-blklist&vm-then-pound'));
+		$ext->add($id, $c, '', new \ext_saydigits('${allownr}'));
+		// i18n - Some languages need this is a different format. If we don't
+		// know about the language, assume english
+		$ext->add($id, $c, '', new \ext_gosubif('$[${DIALPLAN_EXISTS('.$id.',${CHANNEL(language)})}]', $id.',${CHANNEL(language)},1', $id.',en,1'));
+		// en - default
+		$ext->add($id, 'en', '', new \ext_digittimeout(1));
+		$ext->add($id, 'en', '', new \ext_read('confirm','if-correct-press&digits/1&to-enter-a-diff-number&press&digits/2'));
+		$ext->add($id, 'en', '', new \ext_return());
+		// ja
+		$ext->add($id, 'ja', '', new \ext_digittimeout(1));
+		$ext->add($id, 'ja', '', new \ext_read('confirm','if-correct-press&digits/1&pleasepress'));
+		$ext->add($id, 'ja', '', new \ext_return());
+
+		$ext->add($id, $c, '', new \ext_gotoif('$[ "${confirm}" = "1" ]','app-allowlist-remove,1,1'));
+	        $ext->add($id, $c, '', new \ext_gotoif('$[ "${confirm}" = "2" ]','app-allowlist-remove,2,1'));
+	        $ext->add($id, $c, '', new \ext_goto('app-allowlist-add-invalid,s,1'));
+
+		$c = '1';
+		$ext->add($id, $c, '', new \ext_dbdel('allowlist/${allownr}'));
+		$ext->add($id, $c, '', new \ext_playback('num-was-successfully&removed'));
+		$ext->add($id, $c, '', new \ext_wait(1));
+		$ext->add($id, $c, '', new \ext_hangup());
+
+	        $c = '2';
+	        $ext->add($id, $c, '', new \ext_set('NumLoops', '$[${NumLoops} + 1]'));
+	        $ext->add($id, $c, '', new \ext_gotoif('$[${NumLoops} < 3]', 'app-allowlist-remove,s,start'));
+	        $ext->add($id, $c, '', new \ext_playback('goodbye'));
+	        $ext->add($id, $c, '', new \ext_hangup());
+
+
+	        $id = 'app-allowlist-remove-invalid';
+	        $c = 's';
+	        $ext->add($id, $c, '', new \ext_set('NumLoops', '$[${NumLoops} + 1]'));
+	        $ext->add($id, $c, '', new \ext_playback('pm-invalid-option'));
+	        $ext->add($id, $c, '', new \ext_gotoif('$[${NumLoops} < 3]', 'app-allowlist-remove,s,start'));
+	        $ext->add($id, $c, '', new \ext_playback('sorry-youre-having-problems&goodbye'));
+	        $ext->add($id, $c, '', new \ext_hangup());
+
+        //Last
+		if(!empty($lastfc)){
+			$ext->add('app-allowlist', $lastfc, '', new \ext_goto('1', 's', 'app-allowlist-last'));
+		}
+		$id = 'app-allowlist-last';
+		$c = 's';
+		$ext->add($id, $c, '', new \ext_answer());
+		$ext->add($id, $c, '', new \ext_macro('user-callerid'));
+		$ext->add($id, $c, '', new \ext_wait(1));
+		$ext->add($id, $c, '', new \ext_setvar('lastcaller', '${DB(CALLTRACE/${AMPUSER})}'));
+		$ext->add($id, $c, '', new \ext_gotoif('$[ $[ "${lastcaller}" = "" ] | $[ "${lastcaller}" = "unknown" ] ]', 'noinfo'));
+		$ext->add($id, $c, '', new \ext_playback('privacy-to-allowlist-last-caller&telephone-number'));
+		$ext->add($id, $c, '', new \ext_saydigits('${lastcaller}'));
+		$ext->add($id, $c, '', new \ext_setvar('TIMEOUT(digit)', '1'));
+		$ext->add($id, $c, '', new \ext_setvar('TIMEOUT(response)', '7'));
+		// i18n - Some languages need this is a different format. If we don't
+		// know about the language, assume english
+		$ext->add($id, $c, '', new \ext_gosubif('$[${DIALPLAN_EXISTS('.$id.',${CHANNEL(language)})}]', $id.',${CHANNEL(language)},1', $id.',en,1'));
+		// en - default
+		$ext->add($id, 'en', '', new \ext_read('confirm','if-correct-press&digits/1'));
+		$ext->add($id, 'en', '', new \ext_return());
+		// ja
+		$ext->add($id, 'ja', '', new \ext_read('confirm','if-correct-press&digits/1&pleasepress'));
+		$ext->add($id, 'ja', '', new \ext_return());
+
+		$ext->add($id, $c, '', new \ext_gotoif('$[ "${confirm}" = "1" ]','app-allowlist-last,1,1'));
+		$ext->add($id, $c, '', new \ext_goto('end'));
+		$ext->add($id, $c, 'noinfo', new \ext_playback('unidentified-no-callback'));
+		$ext->add($id, $c, '', new \ext_hangup());
+		$ext->add($id, $c, '', new \ext_noop('Waiting for input'));
+		$ext->add($id, $c, 'end', new \ext_playback('sorry-youre-having-problems&goodbye'));
+		$ext->add($id, $c, '', new \ext_hangup());
+
+		$c = '1';
+		$ext->add($id, $c, '', new \ext_set('DB(allowlist/${lastcaller})', 1));
+		$ext->add($id, $c, '', new \ext_playback('num-was-successfully'));
+		$ext->add($id, $c, '', new \ext_playback('added'));
+		$ext->add($id, $c, '', new \ext_wait(1));
+		$ext->add($id, $c, '', new \ext_hangup());
+
+		$ext->add($id, 'i', '', new \ext_playback('sorry-youre-having-problems&goodbye'));
+		$ext->add($id, 'i', '', new \ext_hangup());
+	}
+
+	public function getActionBar($request) {
+		$buttons = array();
+		switch ($request['display']) {
+			case 'allowlist':
+			$buttons = array(
+				'reset' => array(
+					'name' => 'reset',
+					'id' => 'Reset',
+					'class' => 'hidden',
+					'value' => _('Reset'),
+				),
+				'submit' => array(
+					'name' => 'submit',
+					'class' => 'hidden',
+					'id' => 'Submit',
+					'value' => _('Submit'),
+				),
+			);
+
+			return $buttons;
+			break;
+		}
+	}
+
+	//Allowlist Methods
+	public function showPage() {
+		$allowlistitems = $this->getAllowlist();
+		$destination = $this->destinationGet();
+		$filter_blocked = $this->blockunknownGet() == 1 ? true : false;
+		$filter_cmcallers = $this->allowcmcallersGet() == 1 ? true : false;
+		$filter_autoadd = $this->outboundautoaddGet() == 1 ? true : false;
+		$view = isset($_REQUEST['view'])?$_REQUEST['view']:'';
+		switch ($view) {
+			case 'grid':
+			return load_view(__DIR__.'/views/algrid.php', array('allowlist' => $allowlistitems));
+			break;
+			default:
+			return load_view(__DIR__.'/views/general.php', array('allowlist' => $allowlistitems, 'destination' => $destination, 'filter_blocked' => $filter_blocked, 'filter_cmcallers' => $filter_cmcallers, 'filter_autoadd' => $filter_autoadd));
+			break;
+		}
+	}
+
+	/**
+	 * Get lists
+	 * @return array Allow listed numbers
+	 */
+	public function getAllowlist() {
+		if ($this->astman->connected()) {
+			$list = $this->astman->database_show('allowlist');
+			$allowlisted = array();
+			foreach ($list as $k => $v) {
+				$numbers = substr($k, 11);
+				$allowlisted[] = array('number' => $numbers, 'description' => $v);
+			}
+			return $allowlisted;
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	/**
+	 * Add Number
+	 * @param  array $post Array of allowlist params
+	 */
+	public function numberAdd($post){
+		if ($this->astman->connected()) {
+			$post['description'] == '' ? $post['description'] = '1' : $post['description'];
+			$this->astman->database_put('allowlist', $post['number'], $post['description']);
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+		return $post['number'];
+	}
+
+	/**
+	 * Delete a number
+	 * @param  string $number Number to delete
+	 * @return boolean         Status of deletion
+	 */
+	public function numberDel($number){
+		if ($this->astman->connected()) {
+			return($this->astman->database_del('allowlist', $number));
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	/**
+	 * Set allowlist destination
+	 * @param  string $dest Destination
+	 * @return boolean       Status of set
+	 */
+	public function destinationSet($dest) {
+		if ($this->astman->connected()) {
+			$this->astman->database_del('allowlist', 'dest');
+			if (!empty($dest)) {
+				return $this->astman->database_put('allowlist', 'dest', $dest);
+			} else {
+				return true;
+			}
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	/**
+	 * Get the destination
+	 * @return string The destination
+	 */
+	public function destinationGet(){
+		if ($this->astman->connected()) {
+			return $this->astman->database_get('allowlist', 'dest');
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	/**
+	 * Whether to block unknown calls
+	 * @param  boolean $blocked True to block, false otherwise
+	 */
+	public function blockunknownSet($blocked){
+		if ($this->astman->connected()) {
+			// Remove filtering for blocked/unknown cid
+			$this->astman->database_del('allowlist', 'blocked');
+			// Add it back if it's checked
+			if (!empty($blocked)) {
+				$this->astman->database_put('allowlist', 'blocked', '1');
+			}
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	/**
+	 * Get status of unknown blocking
+	 * @return string 1 if blocked, 0 otherwise
+	 */
+	public function blockunknownGet(){
+		if ($this->astman->connected()) {
+			return $this->astman->database_get('allowlist', 'blocked');
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+	/**
+	 * Whether to allow contact manager callers
+	 * @param  boolean $cmcallers True to allow, false otherwise
+	 */
+	public function allowcmcallersSet($cmcallers){
+		if ($this->astman->connected()) {
+			// Remove filtering for cmcallers cid
+			$this->astman->database_del('allowlist', 'cmcallers');
+			// Add it back if it's checked
+			if (!empty($cmcallers)) {
+				$this->astman->database_put('allowlist', 'cmcallers', '1');
+			}
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	/**
+	 * Get status of cmcallers allowed
+	 * @return string 1 if cmcallers allowed, 0 otherwise
+	 */
+	public function allowcmcallersGet(){
+		if ($this->astman->connected()) {
+			return $this->astman->database_get('allowlist', 'cmcallers');
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+	/**
+	 * Whether to automatically add called numbers to the allowlist
+	 * @param  boolean $autoadd True to block, false otherwise
+	 */
+	public function outboundautoaddSet($autoadd){
+		if ($this->astman->connected()) {
+			// Remove filtering for autoadd/unknown cid
+			$this->astman->database_del('allowlist', 'autoadd');
+			// Add it back if it's checked
+			if (!empty($autoadd)) {
+				$this->astman->database_put('allowlist', 'autoadd', '1');
+			}
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	/**
+	 * Get status of automattically adding called numbers to allowlist
+	 * @return string 1 if autoadd, 0 otherwise
+	 */
+	public function outboundautoaddGet(){
+		if ($this->astman->connected()) {
+			return $this->astman->database_get('allowlist', 'autoadd');
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+	//BulkHandler hooks
+	public function bulkhandlerGetTypes() {
+		return array(
+			'allowlist' => array(
+				'name' => _('Allowlist'),
+				'description' => _('Import/Export Caller Allowlist')
+			)
+		);
+	}
+	public function bulkhandlerGetHeaders($type) {
+		switch($type){
+			case 'allowlist':
+				$headers = array();
+				$headers['number'] = array('required' => true, 'identifier' => _("Phone Number"), 'description' => _("The number as it appears in the callerid display"));
+				$headers['description'] = array('required' => false, 'identifier' => _("Description"), 'description' => _("Description of number allowlisted"));
+			break;
+		}
+		return $headers;
+	}
+	public function bulkhandlerImport($type, $rawData, $replaceExisting = true) {
+		$blistnums = array();
+		if(!$replaceExisting){
+			$blist = $this->getAllowlist();
+			foreach ($blist as $value) {
+				$blistnums[] = $value['number'];
+			}
+		}
+		switch($type){
+			case 'allowlist':
+				foreach($rawData as $data){
+					if(empty($data['number'])){
+						return array('status' => false, 'message'=> _('Phone Number Required'));
+					}
+					//Skip existing numbers. Array is only populated if replace is false.
+					if(in_array($data['number'], $blistnums)){
+						continue;
+					}
+					$this->numberAdd($data);
+				}
+			break;
+		}
+		return array('status' => true);
+	}
+	public function bulkhandlerExport($type) {
+		$data = NULL;
+		switch ($type) {
+			case 'allowlist':
+				$data = $this->getAllowlist();
+			break;
+		}
+		return $data;
+	}
+
+}
