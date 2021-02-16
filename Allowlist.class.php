@@ -96,10 +96,10 @@ class Allowlist implements \BMO {
 	//BMO Methods
 	public function install() {
 		$fcc = new \featurecode('allowlist', 'allowlist_add');
-		$fcc->setDescription('Allowlist a number');
+		$fcc->setDescription('Add a number to the allowlist');
 		$fcc->setHelpText('Adds a number to the Allowlist Module.  All calls from that number to the system will will be allowed to proceed normally.  Manage these in the Allowlist module.');
 		$fcc->setDefault('*36');
-		$fcc->setProvideDest();
+		$fcc->setProvideDest(TRUE);
 		$fcc->update();
 		unset($fcc);
 
@@ -107,13 +107,15 @@ class Allowlist implements \BMO {
 		$fcc->setDescription('Remove a number from the allowlist');
 		$fcc->setHelpText('Removes a number from the Allowlist Module');
 		$fcc->setDefault('*37');
-		$fcc->setProvideDest();
+		$fcc->setProvideDest(TRUE);
 		$fcc->update();
 		unset($fcc);
+
 		$fcc = new \featurecode('allowlist', 'allowlist_last');
-		$fcc->setDescription('Allowlist the last caller');
+		$fcc->setDescription('Add the last caller to the allowlist');
 		$fcc->setHelpText('Adds the last caller to the Allowlist Module.  All calls from that number to the system will be allowed to proceed normally.');
 		$fcc->setDefault('*38');
+		$fcc->setProvideDest(TRUE);
 		$fcc->update();
 		unset($fcc);
 	}
@@ -237,8 +239,8 @@ class Allowlist implements \BMO {
 
 		if ($this->astman->database_get('allowlist', 'cmcallers') == '1') {
 			$ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB_EXISTS(allowlist/cmcallers)}" = "0"]', 'nonallowlisted'));
-			$ext->add($id, $c, 'cmcheck', new \ext_agi(__DIR__ . '/agi/cmallowlist.agi,${CALLERID(num)},"",cmallowlisted'));
-			$ext->add($id, $c, '', new \ext_gotoif('$["${cmallowlisted}"="false"]', 'nonallowlisted'));
+			$ext->add($id, $c, 'cmcheck', new \ext_agi(__DIR__ . '/agi/allowlist.agi,"inbound"'));
+			$ext->add($id, $c, '', new \ext_gotoif('$["${allowlisted}"="false"]', 'nonallowlisted'));
 			$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
 			$ext->add($id, $c, '', new \ext_return(''));
 			$ext->add($id, $c, 'cmcheck-done', new \ext_noop('contact manager allowlist checking complete'));
@@ -395,6 +397,16 @@ class Allowlist implements \BMO {
 
 		$ext->add($id, 'i', '', new \ext_playback('sorry-youre-having-problems&goodbye'));
 		$ext->add($id, 'i', '', new \ext_hangup());
+
+// Outbound autoadd function
+		$id = "macro-dialout-trunk";
+		$c = "s";
+		$sp = 1;
+//		$ext->splice('macro-dialout-trunk', '17', "gocall", new \ext_noop('This is inserted before priority dialapp'),'mypri');
+//		$ext->splice($id, $c, 'gocall', new \ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'noautoallow'),"",$sp);
+//		$ext->splice($id, $c, 'gocall', new \ext_agi(__DIR__ . '/agi/allowlist.agi,"outbound"'),"",$sp);
+//		$ext->splice($id, $c, 'gocall', new \ext_noop('skipping autoadd to allowlist'),"noautoallow",$sp);
+
 	}
 
 	public function getActionBar($request) {

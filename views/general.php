@@ -80,7 +80,7 @@ if(isset($message)){
 													<div class="row">
 														<div class="form-group">
 															<div class="col-md-4">
-																<b><?php echo _("Allow Contact Manager Callers") ?></b>
+																<b><?php echo _("Allow Asterisk Phonebook and Contact Manager Callers") ?></b>
 																<i class="fa fa-question-circle fpbx-help-icon" data-for="cmcallers"></i>
 															</div>
 															<div class="col-md-8 radioset">
@@ -95,7 +95,7 @@ if(isset($message)){
 											</div>
 											<div class="row">
 												<div class="col-md-12">
-													<span id="cmcallers-help" class="help-block fpbx-help-block"><?php echo _("Check here to allow callers in Contact Manager")?></span>
+													<span id="cmcallers-help" class="help-block fpbx-help-block"><?php echo _("Check here to allow all callers in Asterisk Phonebook or Contact Manager")?></span>
 												</div>
 											</div>
 										</div>

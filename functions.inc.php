@@ -44,6 +44,12 @@ function allowlist_hookGet_config($engine) {
 					$ext->splice($context, $exten, 'callerid', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'));
 				}
 			} // else no DID's defined. Not even a catchall.
+			$context = "macro-dialout-trunk";
+			$exten = "s";
+			$splice_position = 0;
+
+			$ext->splice($context, $exten, 'gocall', new ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'gocall'),"",$splice_position);
+			$ext->splice($context, $exten, 'gocall', new ext_agi(__DIR__ . '/agi/allowlist.agi,"outbound"'),"",$splice_position);
 			break;
 	}
 }
