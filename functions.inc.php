@@ -49,7 +49,7 @@ function allowlist_hookGet_config($engine) {
 			$splice_position = 0;
 
 			$ext->splice($context, $exten, 'gocall', new ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'gocall'),"",$splice_position);
-			$ext->splice($context, $exten, 'gocall', new ext_agi(__DIR__ . '/agi/allowlist.agi,"outbound"'),"",$splice_position);
+			$ext->splice($context, $exten, 'gocall', new ext_agi('allowlist.agi,"outbound"'),"",$splice_position);
 			break;
 	}
 }

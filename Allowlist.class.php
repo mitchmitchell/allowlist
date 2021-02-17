@@ -239,7 +239,7 @@ class Allowlist implements \BMO {
 
 		if ($this->astman->database_get('allowlist', 'cmcallers') == '1') {
 			$ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB_EXISTS(allowlist/cmcallers)}" = "0"]', 'nonallowlisted'));
-			$ext->add($id, $c, 'cmcheck', new \ext_agi(__DIR__ . '/agi/allowlist.agi,"inbound"'));
+			$ext->add($id, $c, 'cmcheck', new \ext_agi('allowlist.agi,"inbound"'));
 			$ext->add($id, $c, '', new \ext_gotoif('$["${allowlisted}"="false"]', 'nonallowlisted'));
 			$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
 			$ext->add($id, $c, '', new \ext_return(''));
@@ -404,7 +404,7 @@ class Allowlist implements \BMO {
 		$sp = 1;
 //		$ext->splice('macro-dialout-trunk', '17', "gocall", new \ext_noop('This is inserted before priority dialapp'),'mypri');
 //		$ext->splice($id, $c, 'gocall', new \ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'noautoallow'),"",$sp);
-//		$ext->splice($id, $c, 'gocall', new \ext_agi(__DIR__ . '/agi/allowlist.agi,"outbound"'),"",$sp);
+//		$ext->splice($id, $c, 'gocall', new \ext_agi('allowlist.agi,"outbound"'),"",$sp);
 //		$ext->splice($id, $c, 'gocall', new \ext_noop('skipping autoadd to allowlist'),"noautoallow",$sp);
 
 	}
