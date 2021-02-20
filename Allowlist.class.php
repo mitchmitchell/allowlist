@@ -220,31 +220,23 @@ class Allowlist implements \BMO {
 		$ext->addInclude('from-internal-additional', $id); // Add the include from from-internal
 		$ext->add($id, $c, '', new \ext_macro('user-callerid'));
 		$id = 'app-allowlist-check';
-		// LookupAllowList doesn't seem to match empty astdb entry for "allowlist/", so we
-		// need to check for the setting and if set, send to the allowlisted area
-		// The gotoif below is not a typo.  For some reason, we've seen the CID number set to Unknown or Unavailable
-		// don't generate the dialplan if they are not using the function
-		//
-		if ($this->astman->database_get('allowlist', 'blocked') == '1') {
-			$ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unknown"]', 'check-blocked'));
-			$ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unavailable"]', 'check-blocked'));
-			$ext->add($id, $c, '', new \ext_gotoif('$["foo${CALLERID(number)}" = "foo"]', 'check-blocked', 'check'));
-			$ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB(allowlist/blocked)}" = "1"]', 'nonallowlisted'));
-		}
 
-		$ext->add($id, $c, 'check', new \ext_gotoif('$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'check-done'));
+		$ext->add($id, $c, '', new \ext_gotoif('$["${callerallowed}"="1"]', 'returnto'));
+
+		$ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unknown"]', 'check-blocked'));
+		$ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unavailable"]', 'check-blocked'));
+		$ext->add($id, $c, '', new \ext_gotoif('$["foo${CALLERID(number)}" = "foo"]', 'check-blocked', 'check-list'));
+		$ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB(allowlist/blocked)}" = "1"]', 'nonallowlisted'));
+
+		$ext->add($id, $c, 'check-list', new \ext_gotoif('$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'check-contacts'));
 		$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
 		$ext->add($id, $c, '', new \ext_return(''));
-		$ext->add($id, $c, 'check-done', new \ext_noop('regular allowlist checking complete'));
 
-		if ($this->astman->database_get('allowlist', 'cmcallers') == '1') {
-			$ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB_EXISTS(allowlist/cmcallers)}" = "0"]', 'nonallowlisted'));
-			$ext->add($id, $c, 'cmcheck', new \ext_agi('allowlist.agi,"inbound"'));
-			$ext->add($id, $c, '', new \ext_gotoif('$["${allowlisted}"="false"]', 'nonallowlisted'));
-			$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
-			$ext->add($id, $c, '', new \ext_return(''));
-			$ext->add($id, $c, 'cmcheck-done', new \ext_noop('contact manager allowlist checking complete'));
-		}
+		$ext->add($id, $c, 'check-contacts', new \ext_gotoif('$["${DB_EXISTS(allowlist/cmcallers)}" = "0"]', 'nonallowlisted'));
+		$ext->add($id, $c, '', new \ext_agi('allowlist.agi,"inbound"'));
+		$ext->add($id, $c, '', new \ext_gotoif('$["${allowlisted}"="false"]', 'nonallowlisted'));
+		$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
+		$ext->add($id, $c, '', new \ext_return(''));
 
 		$ext->add($id, $c, 'nonallowlisted', new \ext_answer(''));
 		$ext->add($id, $c, '', new \ext_set('ALDEST', '${DB(allowlist/dest)}'));
