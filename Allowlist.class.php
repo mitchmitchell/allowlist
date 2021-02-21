@@ -220,7 +220,7 @@ class Allowlist implements \BMO {
 		$ext->addInclude('from-internal-additional', $id); // Add the include from from-internal
 		$ext->add($id, $c, '', new \ext_macro('user-callerid'));
 		$id = 'app-allowlist-check';
-
+		$ext->add($id, $c, '', new \ext_gosubif('$[${DIALPLAN_EXISTS(app-allowlist-check-predial-hook,s,1)}]', 'app-allowlist-check-predial-hook,s,1'));
 		$ext->add($id, $c, '', new \ext_gotoif('$["${callerallowed}"="1"]', 'returnto'));
 
 		$ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unknown"]', 'check-blocked'));

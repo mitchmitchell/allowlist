@@ -53,7 +53,7 @@ if ($direction == 'inbound') {
 		$AGI->verbose("Setting Asterisk channel var $channel_var to true");
 		$AGI->set_variable($channel_var, 'true');
 	} else {
-		$AGI->verbose("$callerid not found in Contact Mgr");
+		$AGI->verbose("$callerid not found in asterisk database");
 		$AGI->verbose("Setting Asterisk channel var $channel_var to false");
 		$AGI->set_variable($channel_var, 'false');	
 	}
@@ -100,11 +100,18 @@ function searchContactManager ($number) {
 	global $AGI;
 	global $FreePBX;
 	$found = false;
-	$AGI->verbose("Searching all Contact Mgr groups for $number");	
-	$search=$FreePBX->Contactmanager->getNamebyNumber($number);    
-	if (strlen($search['id'])!=0) {	// dialed number is in contact manager
+
+	// Is Contact Manager enabled and active?
+	try {
+		$AGI->verbose("Searching all Contact Mgr groups for $number");	
+		$search=$FreePBX->Contactmanager->getNamebyNumber($number);    
+		if (strlen($search['id'])!=0) {	// dialed number is in contact manager
 		// contact found
-		$found = true;
+			$found = true;
+		}
+	} catch (\Exception $e) {
+		// Contact Manager not active, or not enabled, don't do anything
+		$AGI->verbose("Contact Mgr not installed or disabled - will NOT search it for $number");	
 	}
 	Return $found;
 }
