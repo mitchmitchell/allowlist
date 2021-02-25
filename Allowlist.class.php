@@ -80,7 +80,7 @@ class Allowlist implements \BMO {
 					foreach($allowlist as $item){
 						$number = $item['number'];
 						$description = $item['description'];
-						if($number == 'dest' || $number == 'blocked' || $number == 'cmcallers' || $number == 'autoadd'){
+						if($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || $number == 'autoadd'){
 							continue;
 						}else{
 							$ret[] = array('number' => $number, 'description' => $description);
@@ -143,7 +143,7 @@ class Allowlist implements \BMO {
 				case 'settings':
 					$this->destinationSet($destination);
 					$this->blockunknownSet($request['blocked']);
-					$this->allowcmcallersSet($request['cmcallers']);
+					$this->allowknowncallersSet($request['knowncallers']);
 					$this->outboundautoaddSet($request['autoadd']);
 				break;
 				case 'import':
@@ -232,7 +232,7 @@ class Allowlist implements \BMO {
 		$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
 		$ext->add($id, $c, '', new \ext_return(''));
 
-		$ext->add($id, $c, 'check-contacts', new \ext_gotoif('$["${DB_EXISTS(allowlist/cmcallers)}" = "0"]', 'nonallowlisted'));
+		$ext->add($id, $c, 'check-contacts', new \ext_gotoif('$["${DB_EXISTS(allowlist/knowncallers)}" = "0"]', 'nonallowlisted'));
 		$ext->add($id, $c, '', new \ext_agi('allowlist.agi,"inbound"'));
 		$ext->add($id, $c, '', new \ext_gotoif('$["${allowlisted}"="false"]', 'nonallowlisted'));
 		$ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
@@ -390,15 +390,6 @@ class Allowlist implements \BMO {
 		$ext->add($id, 'i', '', new \ext_playback('sorry-youre-having-problems&goodbye'));
 		$ext->add($id, 'i', '', new \ext_hangup());
 
-// Outbound autoadd function
-		$id = "macro-dialout-trunk";
-		$c = "s";
-		$sp = 1;
-//		$ext->splice('macro-dialout-trunk', '17', "gocall", new \ext_noop('This is inserted before priority dialapp'),'mypri');
-//		$ext->splice($id, $c, 'gocall', new \ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'noautoallow'),"",$sp);
-//		$ext->splice($id, $c, 'gocall', new \ext_agi('allowlist.agi,"outbound"'),"",$sp);
-//		$ext->splice($id, $c, 'gocall', new \ext_noop('skipping autoadd to allowlist'),"noautoallow",$sp);
-
 	}
 
 	public function getActionBar($request) {
@@ -430,7 +421,7 @@ class Allowlist implements \BMO {
 		$allowlistitems = $this->getAllowlist();
 		$destination = $this->destinationGet();
 		$filter_blocked = $this->blockunknownGet() == 1 ? true : false;
-		$filter_cmcallers = $this->allowcmcallersGet() == 1 ? true : false;
+		$filter_knowncallers = $this->allowknowncallersGet() == 1 ? true : false;
 		$filter_autoadd = $this->outboundautoaddGet() == 1 ? true : false;
 		$view = isset($_REQUEST['view'])?$_REQUEST['view']:'';
 		switch ($view) {
@@ -438,7 +429,7 @@ class Allowlist implements \BMO {
 			return load_view(__DIR__.'/views/algrid.php', array('allowlist' => $allowlistitems));
 			break;
 			default:
-			return load_view(__DIR__.'/views/general.php', array('allowlist' => $allowlistitems, 'destination' => $destination, 'filter_blocked' => $filter_blocked, 'filter_cmcallers' => $filter_cmcallers, 'filter_autoadd' => $filter_autoadd));
+			return load_view(__DIR__.'/views/general.php', array('allowlist' => $allowlistitems, 'destination' => $destination, 'filter_blocked' => $filter_blocked, 'filter_knowncallers' => $filter_knowncallers, 'filter_autoadd' => $filter_autoadd));
 			break;
 		}
 	}
@@ -548,15 +539,15 @@ class Allowlist implements \BMO {
 	}
 	/**
 	 * Whether to allow contact manager callers
-	 * @param  boolean $cmcallers True to allow, false otherwise
+	 * @param  boolean $knowncallers True to allow, false otherwise
 	 */
-	public function allowcmcallersSet($cmcallers){
+	public function allowknowncallersSet($knowncallers){
 		if ($this->astman->connected()) {
-			// Remove filtering for cmcallers cid
-			$this->astman->database_del('allowlist', 'cmcallers');
+			// Remove filtering for knowncallers cid
+			$this->astman->database_del('allowlist', 'knowncallers');
 			// Add it back if it's checked
-			if (!empty($cmcallers)) {
-				$this->astman->database_put('allowlist', 'cmcallers', '1');
+			if (!empty($knowncallers)) {
+				$this->astman->database_put('allowlist', 'knowncallers', '1');
 			}
 		} else {
 			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
@@ -564,12 +555,12 @@ class Allowlist implements \BMO {
 	}
 
 	/**
-	 * Get status of cmcallers allowed
-	 * @return string 1 if cmcallers allowed, 0 otherwise
+	 * Get status of knowncallers allowed
+	 * @return string 1 if knowncallers allowed, 0 otherwise
 	 */
-	public function allowcmcallersGet(){
+	public function allowknowncallersGet(){
 		if ($this->astman->connected()) {
-			return $this->astman->database_get('allowlist', 'cmcallers');
+			return $this->astman->database_get('allowlist', 'knowncallers');
 		} else {
 			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
 		}
