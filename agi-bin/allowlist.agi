@@ -2,7 +2,11 @@
 <?php
 
 // FreePBX Bootstrap environment
-include '/etc/freepbx.conf';
+$restrict_mods = true;
+if (!@include_once(getenv('FREEPBX_CONF') ? getenv('FREEPBX_CONF') : '/etc/freepbx.conf')) {
+	include_once('/etc/asterisk/freepbx.conf');
+}
+
 $FreePBX = FreePBX::Create();
 
 // AGI Class
