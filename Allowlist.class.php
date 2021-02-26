@@ -80,7 +80,7 @@ class Allowlist implements \BMO {
 					foreach($allowlist as $item){
 						$number = $item['number'];
 						$description = $item['description'];
-						if($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || $number == 'autoadd'){
+						if($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || $number == 'autoadd' || substr($number,0,3) == 'did'){
 							continue;
 						}else{
 							$ret[] = array('number' => $number, 'description' => $description);
@@ -449,6 +449,9 @@ class Allowlist implements \BMO {
 			$list = $this->astman->database_show('allowlist');
 			$allowlisted = array();
 			foreach ($list as $k => $v) {
+				if($k == 'dest' || $k == 'blocked' || $k == 'knowncallers' || $k == 'autoadd' || substr($k,0,3) == 'did'){
+					continue;
+				}
 				$numbers = substr($k, 11);
 				$allowlisted[] = array('number' => $numbers, 'description' => $v);
 			}
