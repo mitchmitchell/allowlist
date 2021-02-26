@@ -240,8 +240,14 @@ class Allowlist implements \BMO {
 
 		$ext->add($id, $c, 'nonallowlisted', new \ext_answer(''));
 		$ext->add($id, $c, '', new \ext_set('ALDEST', '${DB(allowlist/dest)}'));
+
+		$ext->add($id, $c, '', new \ext_execif('$["${ALDEST}"=""]', 'Set', 'ALDEST=app-blackhole,hangup,1'));
 		$ext->add($id, $c, '', new \ext_gotoif('$["${alreturnhere}"="1"]', 'returnto'));
-		$ext->add($id, $c, '', new \ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}', 'returnto'));
+		$ext->add($id, $c, '', new \ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}', 'app-blackhole,zapateller,1'));
+
+//		$ext->add($id, $c, '', new \ext_gotoif('$["${alreturnhere}"="1"]', 'returnto'));
+//		$ext->add($id, $c, '', new \ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}', 'returnto'));
+
 		$ext->add($id, $c, 'returnto', new \ext_return());
 
 		//Dialplan for add
@@ -644,6 +650,41 @@ class Allowlist implements \BMO {
 			break;
 		}
 		return $data;
+	}
+
+	public function didAdd($id, $did, $cid){
+		if ($this->astman->connected()) {
+			// Add in did/cid pair
+			$exten = $did . ($cid == "" ? "" : '/' . $cid);
+			$this->astman->database_put('allowlist', 'did/'. $exten , true);
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+	public function didDelete($did, $cid){
+		if ($this->astman->connected()) {
+			// Remove did/cid pair
+			$exten = $did . ($cid == "" ? "" : '/' . $cid);
+			$this->astman->database_del('allowlist', 'did/'. $exten);
+		} else {
+			throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+		}
+	}
+
+
+	public function didIsSet($did, $cid){
+                if ($this->astman->connected()) {
+			$exten = $did . ($cid == "" ? "" : '/' . $cid);
+                        $var = $this->astman->database_get('allowlist', 'did/' . $exten);
+			if ($var) {
+				return true;
+			} else {
+				return false;
+			}
+                } else {
+                        throw new \RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+                }
 	}
 
 }

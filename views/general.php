@@ -81,13 +81,13 @@ if(isset($message)){
 														<div class="form-group">
 															<div class="col-md-4">
 																<b><?php echo _("Allow Asterisk Phonebook and Contact Manager Callers") ?></b>
-																<i class="fa fa-question-circle fpbx-help-icon" data-for="cmcallers"></i>
+																<i class="fa fa-question-circle fpbx-help-icon" data-for="knowncallers"></i>
 															</div>
 															<div class="col-md-8 radioset">
-																<input type="radio" name="cmcallers" id="cmcallersyes" value="1" <?php echo ($filter_cmcallers === true?"CHECKED":"") ?>>
-																<label for="cmcallersyes"><?php echo _("Yes");?></label>
-																<input type="radio" name="cmcallers" id="cmcallersno" value="" <?php echo ($filter_cmcallers === true?"":"CHECKED") ?>>
-																<label for="cmcallersno"><?php echo _("No");?></label>
+																<input type="radio" name="knowncallers" id="knowncallersyes" value="1" <?php echo ($filter_knowncallers === true?"CHECKED":"") ?>>
+																<label for="knowncallersyes"><?php echo _("Yes");?></label>
+																<input type="radio" name="knowncallers" id="knowncallersno" value="" <?php echo ($filter_knowncallers === true?"":"CHECKED") ?>>
+																<label for="knowncallersno"><?php echo _("No");?></label>
 															</div>
 														</div>
 													</div>
@@ -95,7 +95,7 @@ if(isset($message)){
 											</div>
 											<div class="row">
 												<div class="col-md-12">
-													<span id="cmcallers-help" class="help-block fpbx-help-block"><?php echo _("Check here to allow all callers in Asterisk Phonebook or Contact Manager")?></span>
+													<span id="knowncallers-help" class="help-block fpbx-help-block"><?php echo _("Check here to allow all callers in Asterisk Phonebook or Contact Manager")?></span>
 												</div>
 											</div>
 										</div>
