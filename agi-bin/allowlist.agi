@@ -27,6 +27,15 @@ $AGI->verbose("script starting up");
 
 $callerid = substr($AGI->request['agi_callerid'],-10,10);
 $dnid = substr($AGI->request['agi_dnid'],-10,10);
+$res = $AGI->get_variable("DIAL_NUMBER");
+
+if ($res['result'] == 0) {
+	$dial_number = $dnid;
+} else {
+	$dial_number = $res['data'];
+}
+
+$AGI->verbose("\$dial_number = \"$dial_number\"");
  
 // script requires a direction - exit if not provided
 if ($argc > 1) {
@@ -64,18 +73,18 @@ if ($direction == 'inbound') {
 
 } elseif ($direction == 'outbound') {
 	$AGI->verbose("performing outbound actions");
-	$AGI->verbose("searching for \"$dnid\" in asterisk database");
+	$AGI->verbose("searching for \"$dial_number\" in asterisk database");
 
-	if (!(searchAllowList($dnid) || searchContactManager($dnid) || searchAsteriskPhonebook($dnid)) ) { // dialed number is not part of any of the allowed numbers so add it
+	if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) ) { // dialed number is not part of any of the allowed numbers so add it
 		$AGI->verbose("adding number to allowlist");
-		$done = $AGI->database_put('allowlist',$dnid,'automatically added');
+		$done = $AGI->database_put('allowlist',$dial_number,'automatically added');
 		if ($done['result'] == 0) {
-			$AGI->verbose("could not add $dnid to allowlist.");
+			$AGI->verbose("could not add $dial_number to allowlist.");
   		} else {
-			$AGI->verbose("added $dnid to allowlist.");
+			$AGI->verbose("added $dial_number to allowlist.");
 		}
 	} else {
-		$AGI->verbose("$dnid found in asterisk database not autoadding to allowlist.");
+		$AGI->verbose("$dial_number found in asterisk database not autoadding to allowlist.");
 	}
 
 } else {

@@ -100,7 +100,6 @@ function allowlist_hookGet_config($engine) {
 					$cidnum = trim($item['cidnum']);
 
 					if (allowlist_did_get($exten . "/" . $cidnum)) {
-						var_dump($exten, $cidnum, $item);
 						if ($cidnum != '' && $exten == '') {
 							$exten = 's';
 							$pricid = ($item['pricid']) ? true:false;
