@@ -80,11 +80,7 @@ class Allowlist implements \BMO {
 					foreach($allowlist as $item){
 						$number = $item['number'];
 						$description = $item['description'];
-						if($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || $number == 'autoadd' || substr($number,0,3) == 'did'){
-							continue;
-						}else{
-							$ret[] = array('number' => $number, 'description' => $description);
-						}
+						$ret[] = array('number' => $number, 'description' => $description);
 					}
 				return $ret;
 				break;
@@ -449,10 +445,11 @@ class Allowlist implements \BMO {
 			$list = $this->astman->database_show('allowlist');
 			$allowlisted = array();
 			foreach ($list as $k => $v) {
-				if($k == 'dest' || $k == 'blocked' || $k == 'knowncallers' || $k == 'autoadd' || substr($k,0,3) == 'did'){
+				$numbers = substr($k, 11);
+				// keep out the extra data entries that are not numbers on the list
+				if($numbers == 'dest' || $numbers == 'blocked' || $numbers == 'knowncallers' || $numbers == 'autoadd' || substr($numbers,0,3) == 'did'){
 					continue;
 				}
-				$numbers = substr($k, 11);
 				$allowlisted[] = array('number' => $numbers, 'description' => $v);
 			}
 			return $allowlisted;
@@ -655,7 +652,7 @@ class Allowlist implements \BMO {
 		return $data;
 	}
 
-	public function didAdd($id, $did, $cid){
+	public function didAdd($did, $cid){
 		if ($this->astman->connected()) {
 			// Add in did/cid pair
 			$exten = $did . ($cid == "" ? "" : '/' . $cid);

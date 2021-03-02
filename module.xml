@@ -7,7 +7,7 @@
 	<license>GPLv3+</license>
 	<licenselink>http://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
 	<category>Admin</category>
-	<description>This module is used to manage a system wide list of allowlisted callers</description>
+	<description>This module is used to manage a system wide list of allowed callers</description>
 	<more-info>https://wiki.freepbx.org/display/F2/Allowlist+Module</more-info>
 	<menuitems>
 		<allowlist needsenginedb="yes">Allowlist</allowlist>
@@ -29,4 +29,9 @@
 	<supported>
 		<version>16.0</version>
 	</supported>
+        <console>
+                <command>
+                        <name>allowlist</name>
+                </command>
+        </console>
 </module>

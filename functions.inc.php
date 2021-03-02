@@ -62,7 +62,7 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
 				$invalidDIDChars = array('<', '>');
 				$extension = trim(str_replace($invalidDIDChars, "", $request['extension']));
 				$cidnum = trim(str_replace($invalidDIDChars, "", $request['cidnum']));
-				$allowlist->didAdd($request['allowlist_id'], $extension, $cidnum);
+				$allowlist->didAdd($extension, $cidnum);
 			}
 			break;
 		case 'delIncoming':
@@ -80,7 +80,7 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
 				$allowlist->didDelete($extarray[0], $extarray[1]);
 			}
 			if ($request['enable_allowlist'] == 'yes') {
-				$allowlist->didAdd($request['allowlist_id'], $extension, $cidnum);
+				$allowlist->didAdd($extension, $cidnum);
 			}
 			break;
 	}
