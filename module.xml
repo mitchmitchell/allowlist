@@ -1,19 +1,17 @@
 <module>
 	<rawname>allowlist</rawname>
-	<repo>standard</repo>
-	<name>Allowlist</name>
-	<version>16.0.1</version>
-	<publisher>Magnolia Manor Networks</publisher>
+	<repo>unsupported</repo>
+	<name>Allow List</name>
+	<version>15.0.1</version>
+	<publisher>Sangoma Technologies Corporation</publisher>
 	<license>GPLv3+</license>
 	<licenselink>http://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
 	<category>Admin</category>
-	<description>This module is used to manage a system wide list of allowed callers</description>
-	<more-info>https://wiki.freepbx.org/display/F2/Allowlist+Module</more-info>
-	<menuitems>
-		<allowlist needsenginedb="yes">Allowlist</allowlist>
-	</menuitems>
+	<description>
+		This module is used to manage a system wide list of allowlisted callers.
+	</description>
 	<changelog>
-		*16.0.1alpha* 16.0.1 alpha release
+		*15.0.1* Initial 
 	</changelog>
 	<hooks>
 		<bulkhandler class="Bulkhandler" namespace="FreePBX\modules">
@@ -26,12 +24,17 @@
 	<depends>
 		<module>core ge 2.5.1.2</module>
 	</depends>
-	<supported>
-		<version>16.0</version>
-	</supported>
+	<menuitems>
+		<allowlist needsenginedb="yes">Allowlist</allowlist>
+	</menuitems>
+ 	<supported>
+ 		<version>15.0</version>
+ 	</supported>
         <console>
                 <command>
                         <name>allowlist</name>
                 </command>
         </console>
+	<database>
+	</database>
 </module>
