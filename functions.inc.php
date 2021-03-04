@@ -117,9 +117,13 @@ function allowlist_hookGet_config($engine) {
 						}
 
 						$exten = $exten.(empty($cidnum)?"":"/".$cidnum); //if a CID num is defined, add it
-						$ext->splice($context, $exten, 'did', new ext_set('alreturnhere', '1'));
-						$ext->splice($context, $exten, 'did', new ext_gosub('1', 's', 'app-allowlist-check'));
-						$ext->splice($context, $exten, 'callerid', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'));
+						//$ext->splice($context, $exten, 'did', new ext_set('alreturnhere', '1'));
+						//$ext->splice($context, $exten, 'did', new ext_gosub('1', 's', 'app-allowlist-check'));
+						//$ext->splice($context, $exten, 'callerid', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'));
+
+						$ext->splice($context, $exten, 'did-cid-hook', new ext_set('alreturnhere', '1'),"",1);
+						$ext->splice($context, $exten, 'did-cid-hook', new ext_gosub('1', 's', 'app-allowlist-check'),"",2);
+						$ext->splice($context, $exten, 'did-cid-hook', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'),"",3);
 					}
 				}
 			} // else no DID's defined. Not even a catchall.

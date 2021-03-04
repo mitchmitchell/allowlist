@@ -128,8 +128,52 @@ class Allowlist extends Command {
 			$this->displayOptions($allowlist, $output)->render();;
 		}
 		if($input->getOption('destination')) {
-			$output->writeln("<error>Not Yet Implemented</error>");
+			$none = $input->getOption('destination');
+			$destinations = $this->getDestinations();
+			ksort($destinations, SORT_STRING);
+			$modnames = $modids = array();
+			$count = 0;
+			$modids[$count] =  $count;
+			$modnames[$count] =  array($count, "None");
+			foreach($destinations as $mod => $dest){
+				$modids[$count + 1] =  $count + 1;
+				$modnames[$count + 1] =  array($count + 1, $mod);
+				$count++;
+			}
+			$table = new Table($output);
+			$table->setHeaders(array('ID',_('Module')));
+			$table->setRows($modnames);
+			$output->writeln(_('Choose a Module for Destinations'));
+			$helper = $this->getHelper('question');
+			$question = new ChoiceQuestion($table->render(),$modids,-1);
+			$id = $helper->ask($input, $output, $question); // $id is one based so that zero will mean delete the destination
+			if ($id != "0") {
+				$destlist = $destinations[$modnames[$id][1]];
+				$destmodname = $modnames[$id][1];
+				ksort($destlist, SORT_STRING);
+				// now build the second level menu to select the actual destination
+				$destnames = $destids = array();
+				$count = 0;
+				foreach($destlist as $name => $dest){
+					$destids[$count + 1] =  $count + 1;
+					$destnames[$count + 1] =  array($count + 1, $name, $dest);
+					$count++;
+				}
+				$table = new Table($output);
+				$table->setHeaders(array('ID',_('Name'),_('Destination')));
+				$table->setRows($destnames);
+				$output->writeln(_('Choose a Destination'));
+				$helper = $this->getHelper('question');
+				$question = new ChoiceQuestion($table->render(),$destids,-1);
+				$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
+				$output->writeln("<question>Setting allowlist destination to ". $destmodname . "->" . $destnames[$id][1] ." = " . $destnames[$id][2] ."</question>");
+				$allowlist->destinationSet($destnames[$id][2]);
+			} else {
+				$output->writeln("<question>Setting allowlist destination to None.</question>");
+				$allowlist->astman->database_del('allowlist', 'dest');
+			}
 		}
+
 		if($input->getOption('delete')) {
 			$number = $input->getOption('delete');
 			if ($allowlist->numberDel($number)) {
@@ -245,5 +289,14 @@ class Allowlist extends Command {
 			return false;
 		}
 		return true;
+	}
+
+	private function getDestinations() {
+		$results = \FreePBX::Destinations()->getAllDestinations();
+		foreach ($results as $destination) {
+			$list[$destination['name']][$destination['description']] = $destination['destination'];
+		}
+		ksort($list, SORT_STRING);
+		return $list;
 	}
 }
