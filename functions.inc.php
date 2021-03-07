@@ -62,7 +62,7 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
 				$invalidDIDChars = array('<', '>');
 				$extension = trim(str_replace($invalidDIDChars, "", $request['extension']));
 				$cidnum = trim(str_replace($invalidDIDChars, "", $request['cidnum']));
-				$allowlist->didAdd($request['allowlist_id'], $extension, $cidnum);
+				$allowlist->didAdd($extension, $cidnum);
 			}
 			break;
 		case 'delIncoming':
@@ -80,7 +80,7 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
 				$allowlist->didDelete($extarray[0], $extarray[1]);
 			}
 			if ($request['enable_allowlist'] == 'yes') {
-				$allowlist->didAdd($request['allowlist_id'], $extension, $cidnum);
+				$allowlist->didAdd($extension, $cidnum);
 			}
 			break;
 	}
@@ -121,6 +121,10 @@ function allowlist_hookGet_config($engine) {
 						$ext->splice($context, $exten, 'did', new ext_set('alreturnhere', '1'));
 						$ext->splice($context, $exten, 'did', new ext_gosub('1', 's', 'app-allowlist-check'));
 						$ext->splice($context, $exten, 'callerid', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'));
+
+						//$ext->splice($context, $exten, 'did-cid-hook', new ext_set('alreturnhere', '1'),"",1);
+						//$ext->splice($context, $exten, 'did-cid-hook', new ext_gosub('1', 's', 'app-allowlist-check'),"",2);
+						//$ext->splice($context, $exten, 'did-cid-hook', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'),"",3);
 					}
 				}
 			} // else no DID's defined. Not even a catchall.

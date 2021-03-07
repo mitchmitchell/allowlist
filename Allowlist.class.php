@@ -3,6 +3,7 @@ namespace FreePBX\modules;
 // vim: set ai ts=4 sw=4 ft=php expandtab:
 //	License for all code of this FreePBX module can be found in the license file inside the module directory
 //      Copyright 2021 Magnolia Manor Networks
+
 use BMO;
 use RuntimeException;
 
@@ -840,7 +841,7 @@ class Allowlist implements BMO
                         continue;
                     }
                     $this->numberAdd($data);
-                }
+               }
             break;
         }
         return array(
