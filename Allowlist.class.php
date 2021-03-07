@@ -529,7 +529,7 @@ class Allowlist implements BMO
             $allowlisted = array();
             foreach ($list as $k => $v)
             {
-                if ($k == 'dest' || $k == 'blocked' || $k == 'knowncallers' || $k == 'autoadd' || substr($k, 0, 3) == 'did')
+                if ($k == '/allowlist/dest' || $k == '/allowlist/blocked' || $k == '/allowlist/knowncallers' || $k == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
                 {
                     continue;
                 }
