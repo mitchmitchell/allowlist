@@ -72,7 +72,7 @@ class Allowlist extends Base {
 				return [
 					'allAllowlists' => [
 						'type' => $this->typeContainer->get('allowlist')->getConnectionType(),
-						'description' => 'Used to manage a system wide list of blocked callers',
+						'description' => 'Used to manage a system wide list of allowed callers',
 						'args' => Relay::connectionArgs(),
 						'resolve' => function($root, $args) {
 							return Relay::connectionFromArray($this->freepbx->Allowlist->getAllowlist(), $args);
@@ -127,7 +127,7 @@ class Allowlist extends Base {
 		});
 
 		$user = $this->typeContainer->create('allowlist');
-		$user->setDescription('Used to manage a system wide list of blocked callers');
+		$user->setDescription('Used to manage a system wide list of allowed callers');
 
 		$user->addInterfaceCallback(function() {
 			return [$this->getNodeDefinition()['nodeInterface']];
@@ -146,11 +146,11 @@ class Allowlist extends Base {
 				}),
 				'number' => [
 					'type' => Type::string(),
-					'description' => 'The number to block'
+					'description' => 'The number to allow'
 				],
 				'description' => [
 					'type' => Type::string(),
-					'description' => 'Description of the blocked number'
+					'description' => 'Description of the allowed number'
 				]
 			];
 		});
