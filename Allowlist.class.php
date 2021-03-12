@@ -860,7 +860,7 @@ class Allowlist implements BMO
         return $data;
     }
 
-    public function didAdd($id, $did, $cid)
+    public function didAdd($did, $cid)
     {
         if ($this
             ->astman
