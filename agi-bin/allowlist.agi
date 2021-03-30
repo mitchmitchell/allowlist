@@ -27,6 +27,16 @@ $AGI->verbose("script starting up");
 
 $callerid = substr($AGI->request['agi_callerid'],-10,10);
 $dnid = substr($AGI->request['agi_dnid'],-10,10);
+
+$res = $AGI->get_variable("ROUTEID");
+
+if ($res['result'] == 0) {
+	$route_id = 0;
+} else {
+	$route_id = $res['data'];
+}
+
+
 $res = $AGI->get_variable("DIAL_NUMBER");
 
 if ($res['result'] == 0) {
@@ -73,18 +83,24 @@ if ($direction == 'inbound') {
 
 } elseif ($direction == 'outbound') {
 	$AGI->verbose("performing outbound actions");
-	$AGI->verbose("searching for \"$dial_number\" in asterisk database");
 
-	if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) ) { // dialed number is not part of any of the allowed numbers so add it
-		$AGI->verbose("adding number to allowlist");
-		$done = $AGI->database_put('allowlist',$dial_number,'automatically added');
-		if ($done['result'] == 0) {
-			$AGI->verbose("could not add $dial_number to allowlist.");
-  		} else {
-			$AGI->verbose("added $dial_number to allowlist.");
+	if ( checkAutoAddRoute($route_id) == true ) {
+
+		$AGI->verbose("searching for \"$dial_number\" in asterisk database");
+
+		if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) ) { // dialed number is not part of any of the allowed numbers so add it
+			$AGI->verbose("adding number to allowlist");
+			$done = $AGI->database_put('allowlist',$dial_number,'automatically added');
+			if ($done['result'] == 0) {
+				$AGI->verbose("could not add $dial_number to allowlist.");
+	  		} else {
+				$AGI->verbose("added $dial_number to allowlist.");
+			}
+		} else {
+			$AGI->verbose("$dial_number found in asterisk database not autoadding to allowlist.");
 		}
 	} else {
-		$AGI->verbose("$dial_number found in asterisk database not autoadding to allowlist.");
+		$AGI->verbose("route \"$route_id\" not enabled for autoadding to allowlist");
 	}
 
 } else {
@@ -97,6 +113,18 @@ if ($direction == 'inbound') {
 $AGI->verbose("scripted completed.");
 
 // helper functions
+
+function checkAutoAddRoute ($route_id) {
+	global $AGI;
+	$found = false;
+	$AGI->verbose("checking autoadd for route \"$route_id\".");
+	$res = $AGI->database_get('allowlist','autoadd/' . $route_id);
+	if ($res['result'] != 0 || $route_id == 0) { // found route in autoadd list or route not known
+		$AGI->verbose("autoadding is enabled for route \"$route_id\".");
+		$found = true;
+	}
+	Return $found;
+}
 
 function searchAllowList ($number) {
 	global $AGI;

@@ -739,6 +739,7 @@ class Allowlist implements BMO
      * Whether to automatically add called numbers to the allowlist
      * @param  boolean $autoadd True to block, false otherwise
      */
+
     public function outboundautoaddSet($autoadd)
     {
         if ($this
@@ -767,6 +768,7 @@ class Allowlist implements BMO
      * Get status of automattically adding called numbers to allowlist
      * @return string 1 if autoadd, 0 otherwise
      */
+
     public function outboundautoaddGet()
     {
         if ($this
@@ -782,6 +784,7 @@ class Allowlist implements BMO
             throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
         }
     }
+
     //BulkHandler hooks
     public function bulkhandlerGetTypes()
     {
@@ -919,6 +922,50 @@ class Allowlist implements BMO
         {
             throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
         }
+    }
+
+    public function routeAdd($id)
+    {
+        if ($this->astman->connected())
+        {
+            $this->astman->database_put('allowlist', 'autoadd/' . $id, true);
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    public function routeDelete($id)
+    {
+        if ($this->astman->connected())
+        {
+            $this->astman->database_del('allowlist', 'autoadd/' . $id);
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    public function routeIsSet($id)
+    {
+        if ($this->astman->connected())
+        {
+            $var = $this->astman->database_get('allowlist', 'autoadd/' . $id);
+            if ($var)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+	}
     }
 
 }

@@ -11,7 +11,9 @@ include __DIR__.'/functions.migrated.php';
 
 
 function allowlist_hook_core($viewing_itemid, $target_menuid) {
-	if('did' == $target_menuid){
+//	var_dump($viewing_itemid, $target_menuid);
+        switch ($target_menuid) {
+        case 'did':
                 if (allowlist_did_get($viewing_itemid)) {
                         $enabled = true;
                 } else {
@@ -49,10 +51,49 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
 			<!--END allowlist hook-->
                 ';
 		return $html;
+        case 'routing':
+                if (allowlist_route_get($viewing_itemid)) {
+                        $autoadd = true;
+                } else {
+                        $autoadd = false;
+                }
+		$html= '
+			<!--allowlist hook -->
+                        <!--Automatically add Outbound Callers to Allowlist on Route-->
+                        <div class="element-container">
+                                <div class="row">
+                                        <div class="col-md-12">
+                                                <div class="row">
+                                                        <div class="form-group">
+								<div class="col-md-3">
+									<label class="control-label" for="autoadd_allowlist">'. _("Allowlist Called Numbers").'</label>
+									<i class="fa fa-question-circle fpbx-help-icon" data-for="autoadd_allowlist"></i>
+								</div>
+								<div class="col-md-9 radioset">
+									<input type="radio" name="autoadd_allowlist" id="autoadd_allowlist_yes" value="yes" '. ($autoadd?"CHECKED":"").'>
+									<label for="autoadd_allowlist_yes">'. _("Yes").'</label>
+									<input type="radio" name="autoadd_allowlist" id="autoadd_allowlist_no" value="no" '. ($autoadd?"":"CHECKED").'>
+									<label for="autoadd_allowlist_no">'. _("No").'</label>
+								</div>
+                                                        </div>
+                                                </div>
+                                        </div>
+                                </div>
+                                <div class="row">
+                                        <div class="col-md-12">
+						<span id="autoadd_allowlist-help" class="help-block fpbx-help-block">'. _("Controls whether to automatically add outbound callers to the Allowlist on this Route").'</span>
+                                        </div>
+                                </div>
+                        </div>
+                        <!--END Automatically add Outbound Callers to Allowlist on Route-->
+			<!--END allowlist hook-->
+                ';
+		return $html;
 	}
 }
 
 function allowlist_hookProcess_core($viewing_itemid, $request) {
+//	var_dump($viewing_itemid, $request);
 	$allowlist = FreePBX::Allowlist();
 	if (!isset($request['action']))
 		return;
@@ -81,6 +122,20 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
 			}
 			if ($request['enable_allowlist'] == 'yes') {
 				$allowlist->didAdd($extension, $cidnum);
+			}
+			break;
+		case 'addroute':
+			if ($request['autoadd_allowlist'] == 'yes') {
+				$allowlist->routeAdd($request['id']);
+			}
+			break;
+		case 'delroute':
+			$allowlist->routeDelete($request['id']);
+			break;
+		case 'editroute':		 // deleting and adding as in core module - ensures changes are updated for the route
+			$allowlist->routeDelete($request['id']);
+			if ($request['autoadd_allowlist'] == 'yes') {
+				$allowlist->routeAdd($request['id']);
 			}
 			break;
 	}
@@ -128,12 +183,15 @@ function allowlist_hookGet_config($engine) {
 					}
 				}
 			} // else no DID's defined. Not even a catchall.
-			$context = "macro-dialout-trunk";
-			$exten = "s";
-			$splice_position = 0;
+			$routelist = core_routing_list();
+			if (is_array($routelist)) {		// make sure we do not fail if no outbound routes are defined.
+				$context = "macro-dialout-trunk";
+				$exten = "s";
+				$splice_position = 0;
 
-			$ext->splice($context, $exten, 'gocall', new ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'gocall'),"",$splice_position);
-			$ext->splice($context, $exten, 'gocall', new ext_agi('allowlist.agi,"outbound"'),"",$splice_position);
+				$ext->splice($context, $exten, 'gocall', new ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'gocall'),"",$splice_position);
+				$ext->splice($context, $exten, 'gocall', new ext_agi('allowlist.agi,"outbound"'),"",$splice_position);
+			}
 			break;
 	}
 }
@@ -144,4 +202,8 @@ function allowlist_did_get($did) {
     		return FreePBX::Allowlist()->didIsSet($extarray[0],$extarray[1]);
         }
         return false;
+}
+
+function allowlist_route_get($route_id) {
+    	return FreePBX::Allowlist()->routeIsSet($route_id);
 }
