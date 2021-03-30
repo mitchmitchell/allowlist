@@ -112,7 +112,7 @@ class Allowlist implements BMO
                         {
                             $number = $item['number'];
                             $description = $item['description'];
-                            if ($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || $number == 'autoadd' || substr($number, 0, 3) == 'did')
+                            if ($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || substr($number, 0, 7) == 'autoadd' || substr($number, 0, 3) == 'did')
                             {
                                 continue;
                             }
@@ -529,7 +529,7 @@ class Allowlist implements BMO
             $allowlisted = array();
             foreach ($list as $k => $v)
             {
-                if ($k == '/allowlist/dest' || $k == '/allowlist/blocked' || $k == '/allowlist/knowncallers' || $k == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
+                if ($k == '/allowlist/dest' || $k == '/allowlist/blocked' || $k == '/allowlist/knowncallers' || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
                 {
                     continue;
                 }
