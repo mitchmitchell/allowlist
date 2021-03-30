@@ -43,7 +43,7 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
 				</div>
 				<div class="row">
 					<div class="col-md-12">
-						<span id="enable_allowlist-help" class="help-block fpbx-help-block">'. _("Controls whether Allowlist screening is used on the Route").'</span>
+						<span id="enable_allowlist-help" class="help-block fpbx-help-block">'. _("Controls whether Allowlist screening is used on the Route.").'</span>
 					</div>
 				</div>
 			</div>
@@ -81,7 +81,7 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
                                 </div>
                                 <div class="row">
                                         <div class="col-md-12">
-						<span id="autoadd_allowlist-help" class="help-block fpbx-help-block">'. _("Controls whether to automatically add outbound callers to the Allowlist on this Route").'</span>
+						<span id="autoadd_allowlist-help" class="help-block fpbx-help-block">'. _("Controls whether to automatically add outbound callers on this Route to the Allowlist.").'</span>
                                         </div>
                                 </div>
                         </div>
