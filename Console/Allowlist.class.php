@@ -147,7 +147,7 @@ class Allowlist extends Command {
 			$table->render();
 		}
 		if($input->getOption('settings')) {
-			$optionids = array(1 => 'block', 2 => 'auto', 3 => 'allow');
+			$optionids = array(1 => 'block', 2 => 'allow');
 			$output->writeln(_('Choose a setting to enable/disable'));
 			$helper = $this->getHelper('question');
 			$question = new ChoiceQuestion($this->displayOptions($allowlist, $output)->render(),$optionids,-1);
@@ -260,10 +260,6 @@ class Allowlist extends Command {
 			$allowlist->blockunknownGet() == 0 ? 'No' : 'Yes'
 		);
 		$rows[] = array(
-			'auto add dialed outbound numbers',
-			$allowlist->outboundautoaddGet() == 0 ? 'No' : 'Yes'
-		);
-		$rows[] = array(
 			'allow cm/phonebook known callers',
 			$allowlist->allowknowncallersGet() == 0 ? 'No' : 'Yes'
 		);
@@ -344,9 +340,6 @@ class Allowlist extends Command {
 		switch($option) {
 		case 'block':
 			$allowlist->blockunknownSet( !$allowlist->blockunknownGet() );
-			break;
-		case 'auto':
-			$allowlist->outboundautoaddSet( !$allowlist->outboundautoaddGet() );
 			break;
 		case 'allow':
 			$allowlist->allowknowncallersSet( !$allowlist->allowknowncallersGet() );

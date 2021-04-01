@@ -189,8 +189,8 @@ function allowlist_hookGet_config($engine) {
 				$exten = "s";
 				$splice_position = 0;
 
-				$ext->splice($context, $exten, 'gocall', new ext_gotoif('$["${DB_EXISTS(allowlist/autoadd)}" = "0"]', 'gocall'),"",$splice_position);
-				$ext->splice($context, $exten, 'gocall', new ext_agi('allowlist.agi,"outbound"'),"",$splice_position);
+				$ext->splice($context, $exten, 'gocall', new ext_gotoif('$["${DB_EXISTS(allowlist/autoadd/${ROUTEID})}" = "0"]', 'gocall'),"",$splice_position);
+				$ext->splice($context, $exten, 'gocall', new ext_agi('allowlist-autoadd.agi'),"",$splice_position);
 			}
 			break;
 	}

@@ -1,0 +1,49 @@
+#!/usr/bin/php -q
+<?php
+
+// FreePBX Bootstrap environment
+$restrict_mods = true;
+if (!@include_once(getenv('FREEPBX_CONF') ? getenv('FREEPBX_CONF') : '/etc/freepbx.conf')) {
+	include_once('/etc/asterisk/freepbx.conf');
+}
+
+$FreePBX = FreePBX::Create();
+
+// AGI Class
+$agidir = FreePBX::Config()->get('ASTAGIDIR');
+require_once $agidir."/phpagi.php";
+require_once $agidir."/allowlist-common.php";
+
+$AGI = new AGI();
+
+if (!$AGI || !$FreePBX) {
+	// something went wrong
+	exit;
+}
+
+$AGI->verbose("script starting up");
+
+$callerid = substr($AGI->request['agi_callerid'],-10,10);
+
+// get asterisk channel var name to store result
+if ($argc > 1) {
+	$channel_var = $argv[1];
+	$AGI->verbose("\$channel_var = \"$channel_var\"");
+} else {
+	$AGI->verbose("No channel variable arguement provided, using allowlisted.");
+	$channel_var = "allowlisted";
+}
+
+$AGI->verbose("searching for \"$callerid\" in asterisk database");
+
+if ( (/* searchAllowList($callerid) || dont search allow list for inbound -- done in dialplan */ searchContactManager($callerid) || searchAsteriskPhonebook($callerid)) ) {
+	$AGI->verbose("Found $callerid in asterisk database");
+	$AGI->verbose("Setting Asterisk channel var $channel_var to true");
+	$AGI->set_variable($channel_var, 'true');
+} else {
+	$AGI->verbose("$callerid not found in asterisk database");
+	$AGI->verbose("Setting Asterisk channel var $channel_var to false");
+	$AGI->set_variable($channel_var, 'false');	
+}
+
+$AGI->verbose("scripted completed.");
