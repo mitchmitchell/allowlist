@@ -30,7 +30,7 @@ $res = $AGI->get_variable("DIAL_NUMBER");
 if ($res['result'] == 0) {
 	$dial_number = $dnid;
 } else {
-	$dial_number = $res['data'];
+	$dial_number = substr($res['data'],-10,10);
 }
 
 $AGI->verbose("\$dial_number = \"$dial_number\"");

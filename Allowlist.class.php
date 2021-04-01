@@ -491,8 +491,8 @@ class Allowlist implements BMO
     {
         $allowlistitems = $this->getAllowlist();
         $destination = $this->destinationGet();
-        $filter_blocked = $this->blockunknownGet() == 1 ? true : false;
-        $filter_knowncallers = $this->allowknowncallersGet() == 1 ? true : false;
+        $filter_blocked = $this->blockunknownGet() == 1;
+        $filter_knowncallers = $this->allowknowncallersGet() == 1;
         $view = isset($_REQUEST['view']) ? $_REQUEST['view'] : '';
         switch ($view)
         {
