@@ -11,14 +11,9 @@ include __DIR__.'/functions.migrated.php';
 
 
 function allowlist_hook_core($viewing_itemid, $target_menuid) {
-//	var_dump($viewing_itemid, $target_menuid);
         switch ($target_menuid) {
         case 'did':
-                if (allowlist_did_get($viewing_itemid)) {
-                        $enabled = true;
-                } else {
-                        $enabled = false;
-                }
+                $enabled = allowlist_did_get($viewing_itemid);
 		$html= '
 			<!--allowlist hook -->
 			<!--Enable/Disable Allowlist on Route-->
@@ -89,7 +84,6 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
 }
 
 function allowlist_hookProcess_core($viewing_itemid, $request) {
-//	var_dump($viewing_itemid, $request);
 	$allowlist = FreePBX::Allowlist();
 	if (!isset($request['action']))
 		return;
