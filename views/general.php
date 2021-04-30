@@ -100,33 +100,6 @@ if(isset($message)){
 											</div>
 										</div>
 										<!--End Treat CM Callers as Allowlisted-->
-										<!--Automatically add Outbound Callers to Allowlist-->
-										<div class="element-container">
-											<div class="row">
-												<div class="col-md-12">
-													<div class="row">
-														<div class="form-group">
-															<div class="col-md-4">
-																<b><?php echo _("Automatically Allow Called Numbers") ?></b>
-																<i class="fa fa-question-circle fpbx-help-icon" data-for="autoadd"></i>
-															</div>
-															<div class="col-md-8 radioset">
-																<input type="radio" name="autoadd" id="autoaddyes" value="1" <?php echo ($filter_autoadd === true?"CHECKED":"") ?>>
-																<label for="autoaddyes"><?php echo _("Yes");?></label>
-																<input type="radio" name="autoadd" id="autoaddno" value="" <?php echo ($filter_autoadd === true?"":"CHECKED") ?>>
-																<label for="autoaddno"><?php echo _("No");?></label>
-															</div>
-														</div>
-													</div>
-												</div>
-											</div>
-											<div class="row">
-												<div class="col-md-12">
-													<span id="autoadd-help" class="help-block fpbx-help-block"><?php echo _("Check here to Automatically add outbound callers to the allowlist")?></span>
-												</div>
-											</div>
-										</div>
-										<!--End Automatically add Outbound Callers to Allowlist-->
 										<!--Destination-->
 										<div class="element-container">
 											<div class="row">

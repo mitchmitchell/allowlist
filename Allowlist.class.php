@@ -92,13 +92,8 @@ class Allowlist implements BMO
             case 'calllog':
                 $number = $request['number'];
                 $sql = 'SELECT calldate FROM asteriskcdrdb.cdr WHERE src = ?';
-                $stmt = $this
-                    ->FreePBX
-                    ->Database
-                    ->prepare($sql);
-                $stmt->execute(array(
-                    $number
-                ));
+                $stmt = $this->FreePBX->Database->prepare($sql);
+                $stmt->execute(array($number));
                 $ret = $stmt->fetchAll(\PDO::FETCH_ASSOC);
                 return $ret;
             break;
@@ -112,7 +107,7 @@ class Allowlist implements BMO
                         {
                             $number = $item['number'];
                             $description = $item['description'];
-                            if ($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || $number == 'autoadd' || substr($number, 0, 3) == 'did')
+                            if ($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || substr($number, 0, 7) == 'autoadd' || substr($number, 0, 3) == 'did')
                             {
                                 continue;
                             }
@@ -188,7 +183,6 @@ class Allowlist implements BMO
                     $this->destinationSet($destination);
                     $this->blockunknownSet($request['blocked']);
                     $this->allowknowncallersSet($request['knowncallers']);
-                    $this->outboundautoaddSet($request['autoadd']);
                 break;
                 case 'import':
                     if ($_FILES['file']['error'] > 0)
@@ -297,7 +291,7 @@ class Allowlist implements BMO
         $ext->add($id, $c, '', new \ext_return(''));
 
         $ext->add($id, $c, 'check-contacts', new \ext_gotoif('$["${DB_EXISTS(allowlist/knowncallers)}" = "0"]', 'nonallowlisted'));
-        $ext->add($id, $c, '', new \ext_agi('allowlist.agi,"inbound"'));
+        $ext->add($id, $c, '', new \ext_agi('allowlist-check.agi,"allowlisted"'));
         $ext->add($id, $c, '', new \ext_gotoif('$["${allowlisted}"="false"]', 'nonallowlisted'));
         $ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
         $ext->add($id, $c, '', new \ext_return(''));
@@ -492,9 +486,8 @@ class Allowlist implements BMO
     {
         $allowlistitems = $this->getAllowlist();
         $destination = $this->destinationGet();
-        $filter_blocked = $this->blockunknownGet() == 1 ? true : false;
-        $filter_knowncallers = $this->allowknowncallersGet() == 1 ? true : false;
-        $filter_autoadd = $this->outboundautoaddGet() == 1 ? true : false;
+        $filter_blocked = $this->blockunknownGet() == 1;
+        $filter_knowncallers = $this->allowknowncallersGet() == 1;
         $view = isset($_REQUEST['view']) ? $_REQUEST['view'] : '';
         switch ($view)
         {
@@ -507,8 +500,7 @@ class Allowlist implements BMO
                     'allowlist' => $allowlistitems,
                     'destination' => $destination,
                     'filter_blocked' => $filter_blocked,
-                    'filter_knowncallers' => $filter_knowncallers,
-                    'filter_autoadd' => $filter_autoadd
+                    'filter_knowncallers' => $filter_knowncallers
                 ));
         }
     }
@@ -529,7 +521,7 @@ class Allowlist implements BMO
             $allowlisted = array();
             foreach ($list as $k => $v)
             {
-                if ($k == '/allowlist/dest' || $k == '/allowlist/blocked' || $k == '/allowlist/knowncallers' || $k == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
+                if ($k == '/allowlist/dest' || $k == '/allowlist/blocked' || $k == '/allowlist/knowncallers' || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
                 {
                     continue;
                 }
@@ -735,53 +727,7 @@ class Allowlist implements BMO
             throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
         }
     }
-    /**
-     * Whether to automatically add called numbers to the allowlist
-     * @param  boolean $autoadd True to block, false otherwise
-     */
-    public function outboundautoaddSet($autoadd)
-    {
-        if ($this
-            ->astman
-            ->connected())
-        {
-            // Remove filtering for autoadd/unknown cid
-            $this
-                ->astman
-                ->database_del('allowlist', 'autoadd');
-            // Add it back if it's checked
-            if (!empty($autoadd))
-            {
-                $this
-                    ->astman
-                    ->database_put('allowlist', 'autoadd', '1');
-            }
-        }
-        else
-        {
-            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
-        }
-    }
 
-    /**
-     * Get status of automattically adding called numbers to allowlist
-     * @return string 1 if autoadd, 0 otherwise
-     */
-    public function outboundautoaddGet()
-    {
-        if ($this
-            ->astman
-            ->connected())
-        {
-            return $this
-                ->astman
-                ->database_get('allowlist', 'autoadd');
-        }
-        else
-        {
-            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
-        }
-    }
     //BulkHandler hooks
     public function bulkhandlerGetTypes()
     {
@@ -919,6 +865,50 @@ class Allowlist implements BMO
         {
             throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
         }
+    }
+
+    public function routeAdd($id)
+    {
+        if ($this->astman->connected())
+        {
+            $this->astman->database_put('allowlist', 'autoadd/' . $id, true);
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    public function routeDelete($id)
+    {
+        if ($this->astman->connected())
+        {
+            $this->astman->database_del('allowlist', 'autoadd/' . $id);
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    public function routeIsSet($id)
+    {
+        if ($this->astman->connected())
+        {
+            $var = $this->astman->database_get('allowlist', 'autoadd/' . $id);
+            if ($var)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+	}
     }
 
 }

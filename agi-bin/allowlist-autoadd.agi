@@ -1,0 +1,61 @@
+#!/usr/bin/php -q
+<?php
+
+// FreePBX Bootstrap environment
+$restrict_mods = true;
+if (!@include_once(getenv('FREEPBX_CONF') ? getenv('FREEPBX_CONF') : '/etc/freepbx.conf')) {
+	include_once('/etc/asterisk/freepbx.conf');
+}
+
+$FreePBX = FreePBX::Create();
+
+// AGI Class
+$agidir = FreePBX::Config()->get('ASTAGIDIR');
+require_once $agidir."/phpagi.php";
+require_once $agidir."/allowlist-common.php";
+
+$AGI = new AGI();
+
+if (!$AGI || !$FreePBX) {
+	// something went wrong
+	exit;
+}
+
+$AGI->verbose("script starting up");
+
+$dnid = substr($AGI->request['agi_dnid'],-10,10);
+
+$res = $AGI->get_variable("DIAL_NUMBER");
+
+if ($res['result'] == 0) {
+	$dial_number = $dnid;
+} else {
+	$dial_number = substr($res['data'],-10,10);
+}
+
+$AGI->verbose("\$dial_number = \"$dial_number\"");
+ 
+// get asterisk channel var name to store result
+if ($argc > 1) {
+	$channel_var = trim($argv[1]);
+	$AGI->verbose("\$channel_var = \"$channel_var\"");
+} else {
+	$AGI->verbose("No channel variable arguement provided, using allowlisted.");
+	$channel_var = "allowlisted";
+}
+
+$AGI->verbose("searching for \"$dial_number\" in asterisk database");
+
+if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) ) { // dialed number is not part of any of the allowed numbers so add it
+	$AGI->verbose("adding number to allowlist");
+	$done = $AGI->database_put('allowlist',$dial_number,'automatically added');
+	if ($done['result'] == 0) {
+		$AGI->verbose("could not add $dial_number to allowlist.");
+	} else {
+		$AGI->verbose("added $dial_number to allowlist.");
+	}
+} else {
+	$AGI->verbose("$dial_number found in asterisk database not autoadding to allowlist.");
+}
+
+$AGI->verbose("scripted completed.");
