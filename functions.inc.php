@@ -52,11 +52,7 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
                 ';
 		return $html;
         case 'routing':
-                if (allowlist_route_get($viewing_itemid)) {
-                        $autoadd = true;
-                } else {
-                        $autoadd = false;
-                }
+                $autoadd = allowlist_route_get($viewing_itemid);
 		$html= '
 			<!--allowlist hook -->
                         <!--Automatically add Outbound Callers to Allowlist on Route-->
