@@ -92,7 +92,7 @@ class Allowlist implements BMO
             case 'calllog':
                 $number = $request['number'];
                 $sql = 'SELECT calldate FROM asteriskcdrdb.cdr WHERE src = ?';
-		$cdrdbh =  $this->FreePBX->Cdr->getCdrDbHandle(); 
+                $cdrdbh =  $this->FreePBX->Cdr->getCdrDbHandle(); 
                 $stmt = $cdrdbh->prepare($sql);
                 $stmt->execute(array($number));
                 $ret = $stmt->fetchAll(\PDO::FETCH_ASSOC);
