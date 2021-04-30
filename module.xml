@@ -22,7 +22,7 @@
 		</bulkhandler>
 	</hooks>
 	<depends>
-		<module>core ge 2.5.1.2</module>
+		<module>core ge 15.0.12</module>
 	</depends>
 	<menuitems>
 		<allowlist needsenginedb="yes">Allowlist</allowlist>
