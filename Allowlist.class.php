@@ -17,8 +17,7 @@ class Allowlist implements BMO
             throw new RuntimeException('Not given a FreePBX Object');
         }
         $this->FreePBX = $freepbx;
-        $this->astman = $this
-            ->FreePBX->astman;
+        $this->astman = $this->FreePBX->astman;
 
         if (false)
         {
@@ -161,10 +160,7 @@ class Allowlist implements BMO
     public function doConfigPageInit($page)
     {
         $dispnum = 'allowlist';
-        $astver = $this
-            ->FreePBX
-            ->Config
-            ->get('ASTVERSION');
+        $astver = $this->FreePBX->Config->get('ASTVERSION');
         $request = $_REQUEST;
 
         if (isset($request['goto0']))
@@ -512,13 +508,9 @@ class Allowlist implements BMO
      */
     public function getAllowlist()
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
-            $list = $this
-                ->astman
-                ->database_show('allowlist');
+            $list = $this->astman->database_show('allowlist');
             $allowlisted = array();
             foreach ($list as $k => $v)
             {
@@ -546,14 +538,10 @@ class Allowlist implements BMO
      */
     public function numberAdd($post)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
             $post['description'] == '' ? $post['description'] = '1' : $post['description'];
-            $this
-                ->astman
-                ->database_put('allowlist', $post['number'], $post['description']);
+            $this->astman->database_put('allowlist', $post['number'], $post['description']);
         }
         else
         {
@@ -569,13 +557,9 @@ class Allowlist implements BMO
      */
     public function numberDel($number)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
-            return ($this
-                ->astman
-                ->database_del('allowlist', $number));
+            return ($this->astman->database_del('allowlist', $number));
         }
         else
         {
@@ -590,18 +574,12 @@ class Allowlist implements BMO
      */
     public function destinationSet($dest)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
-            $this
-                ->astman
-                ->database_del('allowlist', 'dest');
+            $this->astman->database_del('allowlist', 'dest');
             if (!empty($dest))
             {
-                return $this
-                    ->astman
-                    ->database_put('allowlist', 'dest', $dest);
+                return $this->astman->database_put('allowlist', 'dest', $dest);
             }
             else
             {
@@ -620,13 +598,9 @@ class Allowlist implements BMO
      */
     public function destinationGet()
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
-            return $this
-                ->astman
-                ->database_get('allowlist', 'dest');
+            return $this->astman->database_get('allowlist', 'dest');
         }
         else
         {
@@ -640,20 +614,14 @@ class Allowlist implements BMO
      */
     public function blockunknownSet($blocked)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
             // Remove filtering for blocked/unknown cid
-            $this
-                ->astman
-                ->database_del('allowlist', 'blocked');
+            $this->astman->database_del('allowlist', 'blocked');
             // Add it back if it's checked
             if (!empty($blocked))
             {
-                $this
-                    ->astman
-                    ->database_put('allowlist', 'blocked', '1');
+                $this->astman->database_put('allowlist', 'blocked', '1');
             }
         }
         else
@@ -668,13 +636,9 @@ class Allowlist implements BMO
      */
     public function blockunknownGet()
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
-            return $this
-                ->astman
-                ->database_get('allowlist', 'blocked');
+            return $this->astman->database_get('allowlist', 'blocked');
         }
         else
         {
@@ -687,20 +651,14 @@ class Allowlist implements BMO
      */
     public function allowknowncallersSet($knowncallers)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
             // Remove filtering for knowncallers cid
-            $this
-                ->astman
-                ->database_del('allowlist', 'knowncallers');
+            $this->astman->database_del('allowlist', 'knowncallers');
             // Add it back if it's checked
             if (!empty($knowncallers))
             {
-                $this
-                    ->astman
-                    ->database_put('allowlist', 'knowncallers', '1');
+                $this->astman->database_put('allowlist', 'knowncallers', '1');
             }
         }
         else
@@ -715,13 +673,9 @@ class Allowlist implements BMO
      */
     public function allowknowncallersGet()
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
-            return $this
-                ->astman
-                ->database_get('allowlist', 'knowncallers');
+            return $this->astman->database_get('allowlist', 'knowncallers');
         }
         else
         {
@@ -809,15 +763,11 @@ class Allowlist implements BMO
 
     public function didAdd($did, $cid)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
             // Add in did/cid pair
             $exten = $did . ($cid == "" ? "" : '/' . $cid);
-            $this
-                ->astman
-                ->database_put('allowlist', 'did/' . $exten, true);
+            $this->astman->database_put('allowlist', 'did/' . $exten, true);
         }
         else
         {
@@ -827,15 +777,11 @@ class Allowlist implements BMO
 
     public function didDelete($did, $cid)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
             // Remove did/cid pair
             $exten = $did . ($cid == "" ? "" : '/' . $cid);
-            $this
-                ->astman
-                ->database_del('allowlist', 'did/' . $exten);
+            $this->astman->database_del('allowlist', 'did/' . $exten);
         }
         else
         {
@@ -845,14 +791,10 @@ class Allowlist implements BMO
 
     public function didIsSet($did, $cid)
     {
-        if ($this
-            ->astman
-            ->connected())
+        if ($this->astman->connected())
         {
             $exten = $did . ($cid == "" ? "" : '/' . $cid);
-            $var = $this
-                ->astman
-                ->database_get('allowlist', 'did/' . $exten);
+            $var = $this->astman->database_get('allowlist', 'did/' . $exten);
             if ($var)
             {
                 return true;
@@ -909,7 +851,7 @@ class Allowlist implements BMO
         else
         {
             throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
-	}
+        }
     }
 
 }
