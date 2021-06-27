@@ -23,7 +23,8 @@ if (!$AGI || !$FreePBX) {
 
 $AGI->verbose("script starting up");
 
-$callerid = substr($AGI->request['agi_callerid'],-10,10);
+#$callerid = substr($AGI->request['agi_callerid'],-10,10);
+$callerid = $AGI->request['agi_callerid'];
 
 // get asterisk channel var name to store result
 if ($argc > 1) {
