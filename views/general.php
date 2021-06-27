@@ -46,33 +46,6 @@ if(isset($message)){
 										<a href = '?display=bulkhandler' class="btn btn-default"><?php echo _("Bulk Handler")?></a>
 									</div>
 									<div role="tabpanel" id="settings" class="tab-pane">
-										<!--Block Anonymous-->
-										<div class="element-container">
-											<div class="row">
-												<div class="col-md-12">
-													<div class="row">
-														<div class="form-group">
-															<div class="col-md-4">
-																<b><?php echo _("Block Unknown/Blocked Caller ID") ?></b>
-																<i class="fa fa-question-circle fpbx-help-icon" data-for="blocked"></i>
-															</div>
-															<div class="col-md-8 radioset">
-																<input type="radio" name="blocked" id="blockedyes" value="1" <?php echo ($filter_blocked === true?"CHECKED":"") ?>>
-																<label for="blockedyes"><?php echo _("Yes");?></label>
-																<input type="radio" name="blocked" id="blockedno" value="" <?php echo ($filter_blocked === true?"":"CHECKED") ?>>
-																<label for="blockedno"><?php echo _("No");?></label>
-															</div>
-														</div>
-													</div>
-												</div>
-											</div>
-											<div class="row">
-												<div class="col-md-12">
-													<span id="blocked-help" class="help-block fpbx-help-block"><?php echo _("Check here to catch Unknown/Blocked Caller ID")?></span>
-												</div>
-											</div>
-										</div>
-										<!--End Block Anonymous-->
 										<!--Treat CM Callers as Allowlisted-->
 										<div class="element-container">
 											<div class="row">

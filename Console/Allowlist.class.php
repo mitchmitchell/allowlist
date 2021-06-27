@@ -29,7 +29,6 @@ class Allowlist extends Command {
 				new InputOption('add', 'a', InputOption::VALUE_REQUIRED, _('Add a new number to the allow list')),
 				new InputOption('delete', 'd', InputOption::VALUE_REQUIRED, _('Delete a number from the allow list')),
 				new InputOption('destination', 't', InputOption::VALUE_NONE, _('Destination for non-allowlisted callers')),
-				new InputOption('settings', 's', InputOption::VALUE_NONE, _('Disable options for allow list processing')),
 				new InputOption('list', 'l', InputOption::VALUE_NONE, _('List all allowlist entries')),
 				new InputOption('did', 'i', InputOption::VALUE_NONE, _('Set whether allowlist is processed for inbound did')),
 				new InputOption('route', 'o', InputOption::VALUE_NONE, _('Set whether autoadd to the allowlist is processed for outbound route')),
@@ -146,16 +145,6 @@ class Allowlist extends Command {
 			$table->setRows($routes);
 			$table->render();
 		}
-		if($input->getOption('settings')) {
-			$optionids = array(1 => 'block', 2 => 'allow');
-			$output->writeln(_('Choose a setting to enable/disable'));
-			$helper = $this->getHelper('question');
-			$question = new ChoiceQuestion($this->displayOptions($allowlist, $output)->render(),$optionids,-1);
-			$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
-			$this->toggleOptions($allowlist,$id);
-			$output->writeln("<question>toggling setting option: ". $id ."</question>");
-			$this->displayOptions($allowlist, $output)->render();;
-		}
 		if($input->getOption('destination')) {
 			$none = $input->getOption('destination');
 			$destinations = $this->getDestinations();
@@ -256,10 +245,6 @@ class Allowlist extends Command {
 		$table->setHeaders(array(_('Option'),_('Value')));
 		$rows = array();
 		$rows[] = array(
-			'block unlisted/blank caller ids',
-			$allowlist->blockunknownGet() == 0 ? 'No' : 'Yes'
-		);
-		$rows[] = array(
 			'allow cm/phonebook known callers',
 			$allowlist->allowknowncallersGet() == 0 ? 'No' : 'Yes'
 		);
@@ -334,20 +319,6 @@ class Allowlist extends Command {
 			$gotRows[$id]['checked'] = $allowlist->routeIsSet($gotRows[$id]['route_id']) == 1 ? "Yes" : "No";
 		}
 		return $gotRows;
-	}
-
-	private function toggleOptions($allowlist,$option) {
-		switch($option) {
-		case 'block':
-			$allowlist->blockunknownSet( !$allowlist->blockunknownGet() );
-			break;
-		case 'allow':
-			$allowlist->allowknowncallersSet( !$allowlist->allowknowncallersGet() );
-			break;
-		default:
-			return false;
-		}
-		return true;
 	}
 
 	private function getDestinations() {
