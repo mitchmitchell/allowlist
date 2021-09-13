@@ -109,13 +109,6 @@ class Allowlist extends Base {
 		$user->setDescription('Allowlist Settings');
 		$user->addFieldCallback(function() {
 			return [
-				'blockUnknown' => [
-					'type' => Type::boolean(),
-					'description' => 'Catch Unknown/Blocked Caller ID',
-					'resolve' => function ($root, $args) {
-						return $this->freepbx->Allowlist->blockunknownGet() == 1 ? true : false;
-					}
-				],
 				'destinationConnection' => [
 					'type' => $this->typeContainer->get('destination')->getObject(),
 					'description' => 'Destination for non allowlisted calls',

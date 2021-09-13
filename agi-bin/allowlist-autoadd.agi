@@ -24,13 +24,15 @@ if (!$AGI || !$FreePBX) {
 $AGI->verbose("script starting up");
 
 $dnid = substr($AGI->request['agi_dnid'],-10,10);
+#$dnid = $AGI->request['agi_dnid'];
 
 $res = $AGI->get_variable("DIAL_NUMBER");
 
 if ($res['result'] == 0) {
 	$dial_number = $dnid;
 } else {
-	$dial_number = substr($res['data'],-10,10);
+        $dial_number = substr($res['data'],-10,10);
+#       $dial_number = $res['data'];
 }
 
 $AGI->verbose("\$dial_number = \"$dial_number\"");

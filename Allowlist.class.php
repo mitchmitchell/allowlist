@@ -107,7 +107,7 @@ class Allowlist implements BMO
                         {
                             $number = $item['number'];
                             $description = $item['description'];
-                            if ($number == 'dest' || $number == 'blocked' || $number == 'knowncallers' || substr($number, 0, 7) == 'autoadd' || substr($number, 0, 3) == 'did')
+                            if ($number == 'dest' || $number == 'knowncallers' || substr($number, 0, 7) == 'autoadd' || substr($number, 0, 3) == 'did')
                             {
                                 continue;
                             }
@@ -178,7 +178,6 @@ class Allowlist implements BMO
             {
                 case 'settings':
                     $this->destinationSet($destination);
-                    $this->blockunknownSet($request['blocked']);
                     $this->allowknowncallersSet($request['knowncallers']);
                 break;
                 case 'import':
@@ -205,8 +204,7 @@ class Allowlist implements BMO
                                     }
                                     allowlist_add(array(
                                         'number' => $data[0],
-                                        'description' => $data[1],
-                                        'blocked' => 0,
+                                        'description' => $data[1]
                                     ));
                                 }
                                 unlink($path);
@@ -277,11 +275,6 @@ class Allowlist implements BMO
         $id = 'app-allowlist-check';
         $ext->add($id, $c, '', new \ext_gosubif('$[${DIALPLAN_EXISTS(app-allowlist-check-predial-hook,s,1)}]', 'app-allowlist-check-predial-hook,s,1'));
         $ext->add($id, $c, '', new \ext_gotoif('$["${callerallowed}"="1"]', 'returnto'));
-
-        $ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unknown"]', 'check-blocked'));
-        $ext->add($id, $c, '', new \ext_gotoif('$["${CALLERID(number)}" = "Unavailable"]', 'check-blocked'));
-        $ext->add($id, $c, '', new \ext_gotoif('$["foo${CALLERID(number)}" = "foo"]', 'check-blocked', 'check-list'));
-        $ext->add($id, $c, 'check-blocked', new \ext_gotoif('$["${DB(allowlist/blocked)}" = "1"]', 'nonallowlisted'));
 
         $ext->add($id, $c, 'check-list', new \ext_gotoif('$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'check-contacts'));
         $ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
@@ -483,7 +476,6 @@ class Allowlist implements BMO
     {
         $allowlistitems = $this->getAllowlist();
         $destination = $this->destinationGet();
-        $filter_blocked = $this->blockunknownGet() == 1;
         $filter_knowncallers = $this->allowknowncallersGet() == 1;
         $view = isset($_REQUEST['view']) ? $_REQUEST['view'] : '';
         switch ($view)
@@ -496,7 +488,6 @@ class Allowlist implements BMO
                 return load_view(__DIR__ . '/views/general.php', array(
                     'allowlist' => $allowlistitems,
                     'destination' => $destination,
-                    'filter_blocked' => $filter_blocked,
                     'filter_knowncallers' => $filter_knowncallers
                 ));
         }
@@ -514,7 +505,7 @@ class Allowlist implements BMO
             $allowlisted = array();
             foreach ($list as $k => $v)
             {
-                if ($k == '/allowlist/dest' || $k == '/allowlist/blocked' || $k == '/allowlist/knowncallers' || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
+                if ($k == '/allowlist/dest' || $k == '/allowlist/knowncallers' || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
                 {
                     continue;
                 }
@@ -608,43 +599,6 @@ class Allowlist implements BMO
         }
     }
 
-    /**
-     * Whether to block unknown calls
-     * @param  boolean $blocked True to block, false otherwise
-     */
-    public function blockunknownSet($blocked)
-    {
-        if ($this->astman->connected())
-        {
-            // Remove filtering for blocked/unknown cid
-            $this->astman->database_del('allowlist', 'blocked');
-            // Add it back if it's checked
-            if (!empty($blocked))
-            {
-                $this->astman->database_put('allowlist', 'blocked', '1');
-            }
-        }
-        else
-        {
-            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
-        }
-    }
-
-    /**
-     * Get status of unknown blocking
-     * @return string 1 if blocked, 0 otherwise
-     */
-    public function blockunknownGet()
-    {
-        if ($this->astman->connected())
-        {
-            return $this->astman->database_get('allowlist', 'blocked');
-        }
-        else
-        {
-            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
-        }
-    }
     /**
      * Whether to allow contact manager callers
      * @param  boolean $knowncallers True to allow, false otherwise
