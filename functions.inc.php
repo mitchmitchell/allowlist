@@ -174,7 +174,7 @@ function allowlist_hookGet_config($engine) {
                                 }
                         } // else no DID's defined. Not even a catchall.
                         $routelist = core_routing_list();
-                        if (is_array($routelist)) {                // make sure we do not fail if no outbound routes are defined.
+                        if (is_array($routelist) & !empty($routelist)) {                // make sure we do not fail if no outbound routes are defined.
                                 $context = "macro-dialout-trunk";
                                 $exten = "s";
                                 $splice_position = 0;
