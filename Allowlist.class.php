@@ -152,6 +152,14 @@ class Allowlist implements BMO
         $fcc->setProvideDest(true);
         $fcc->update();
         unset($fcc);
+
+        $fcc = new \featurecode('allowlist', 'allowlist_pause_toggle');
+        $fcc->setDescription('Temporarily pause or unpause the Allowlist module operation system wide');
+        $fcc->setHelpText('Toggle to pause and unpause Allowlist system wide.');
+        $fcc->setDefault('*39');
+        $fcc->setProvideDest(true);
+        $fcc->update();
+        unset($fcc);
     }
     public function uninstall()
     {
@@ -268,13 +276,23 @@ class Allowlist implements BMO
         $fcc = new \featurecode($modulename, 'allowlist_last');
         $lastfc = $fcc->getCodeActive();
         unset($fcc);
+	//pause toggle
+        $fcc = new \featurecode($modulename, 'allowlist_pause_toggle');
+        $togglefc = $fcc->getCodeActive();
+        unset($fcc);		
+
         $id = 'app-allowlist';
         $c = 's';
         $ext->addInclude('from-internal-additional', $id); // Add the include from from-internal
         $ext->add($id, $c, '', new \ext_macro('user-callerid'));
+
         $id = 'app-allowlist-check';
         $ext->add($id, $c, '', new \ext_gosubif('$[${DIALPLAN_EXISTS(app-allowlist-check-predial-hook,s,1)}]', 'app-allowlist-check-predial-hook,s,1'));
         $ext->add($id, $c, '', new \ext_gotoif('$["${callerallowed}"="1"]', 'returnto'));
+
+	// check pause time and exit if pause is enabled
+        $ext->add($id, $c, '', new \ext_gosub('app-allowlist-pause-check,s,1'));
+	$ext->add($id, $c, '', new \ext_gotoif('$["${DB_EXISTS(allowlist/pause)}"="1"]', 'returnto'));
 
         $ext->add($id, $c, 'check-list', new \ext_gotoif('$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'check-contacts'));
         $ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
@@ -310,7 +328,7 @@ class Allowlist implements BMO
         $ext->add($id, $c, '', new \ext_set('NumLoops', 0));
         $ext->add($id, $c, 'start', new \ext_digittimeout(5));
         $ext->add($id, $c, '', new \ext_responsetimeout(10));
-        $ext->add($id, $c, '', new \ext_read('allownr', 'enter-num-allowlist&vm-then-pound'));
+        $ext->add($id, $c, '', new \ext_read('allownr', 'enter-num-whitelist&vm-then-pound'));
         $ext->add($id, $c, '', new \ext_saydigits('${allownr}'));
         // i18n - Some languages need this is a different format. If we don't
         // know about the language, assume english
@@ -412,7 +430,7 @@ class Allowlist implements BMO
         $ext->add($id, $c, '', new \ext_wait(1));
         $ext->add($id, $c, '', new \ext_setvar('lastcaller', '${DB(CALLTRACE/${AMPUSER})}'));
         $ext->add($id, $c, '', new \ext_gotoif('$[ $[ "${lastcaller}" = "" ] | $[ "${lastcaller}" = "unknown" ] ]', 'noinfo'));
-        $ext->add($id, $c, '', new \ext_playback('privacy-to-allowlist-last-caller&telephone-number'));
+        $ext->add($id, $c, '', new \ext_playback('privacy-to-whitelist-last-caller&telephone-number'));
         $ext->add($id, $c, '', new \ext_saydigits('${lastcaller}'));
         $ext->add($id, $c, '', new \ext_setvar('TIMEOUT(digit)', '1'));
         $ext->add($id, $c, '', new \ext_setvar('TIMEOUT(response)', '7'));
@@ -444,6 +462,41 @@ class Allowlist implements BMO
         $ext->add($id, 'i', '', new \ext_playback('sorry-youre-having-problems&goodbye'));
         $ext->add($id, 'i', '', new \ext_hangup());
 
+
+        //Toggle
+        if (!empty($togglefc))
+        {
+            $ext->add('app-allowlist', $togglefc, '', new \ext_goto('1', 's', 'app-allowlist-pause-toggle'));
+        }		
+	$id = 'app-allowlist-pause-toggle';
+        $c = 's';
+        $ext->add($id, $c, '', new \ext_gosubif('$[${DB_EXISTS(allowlist/pause)}]', 'app-allowlist-pause-disable,s,1:app-allowlist-pause-enable,s,1'));
+        $ext->add($id, $c, '', new \ext_answer());
+        $ext->add($id, $c, '', new \ext_macro('user-callerid'));
+        $ext->add($id, $c, '', new \ext_wait(1));
+        $ext->add($id, $c, '', new \ext_gotoif('$[${DB_EXISTS(allowlist/pause)}] ]', 'paused:unpaused'));
+        $ext->add($id, $c, 'paused', new \ext_playback('dictate/pause&enabled'));		
+        $ext->add($id, $c, '', new \ext_hangup());
+        $ext->add($id, $c, 'unpaused', new \ext_playback('dictate/pause&disabled'));		
+        $ext->add($id, $c, '', new \ext_hangup());
+		
+	$id = 'app-allowlist-pause-enable';
+        $c = 's';
+	$ext->add($id, $c, '', new \ext_noop('Current time ${EPOCH}'));		
+	$ext->add($id, $c, '', new \ext_set('DB(allowlist/pause)', '${MATH(${EPOCH}+86400,int)}'));   // set timer 24 hr into future
+        $ext->add($id, $c, '', new \ext_return());
+		
+	$id = 'app-allowlist-pause-disable';
+        $c = 's';
+        $ext->add($id, $c, '', new \ext_dbdel('allowlist/pause'));		
+        $ext->add($id, $c, '', new \ext_return());
+		
+	$id = 'app-allowlist-pause-check';
+        $c = 's';
+	$ext->add($id, $c, '', new \ext_noop('Current time ${EPOCH}'));
+	$ext->add($id, $c, '', new \ext_noop('Pause timer expire ${DB(allowlist/pause)}'));
+        $ext->add($id, $c, '', new \ext_gosubif('$[${DB_EXISTS(allowlist/pause)} && "${DB(allowlist/pause)}"<"${EPOCH}"]', 'app-allowlist-pause-disable,s,1'));
+        $ext->add($id, $c, '', new \ext_return());
     }
 
     public function getActionBar($request)
