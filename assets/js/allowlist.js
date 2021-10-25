@@ -78,18 +78,34 @@ $(document).on('click', '[id^="del"]', function(){
 	}
 	});
 
-	$(document).on('click', '[id^="report"]', function(){
-		var num = $(this).data('number');
-		$.post("ajax.php?module=allowlist&command=calllog",
-			{number: num},
-			function(data,status){
-				console.log(data);
-					$("#blReport").bootstrapTable({});
-					$('#blReport').bootstrapTable('load',data);
-			}
-		);
+$(document).on('click', '[id^="block"]', function(){
+	var num = $(this).data('number');
+	var des = $(this).data('description');
+	var idx = $(this).data('idx');
+	if(confirm(_("Are you sure you want to block this number?"))){
+		$.post("ajax.php?module=allowlist&command=block",
+			{
+			action : "block",
+			number : num,
+			description : des,
+		}).done(function(){
+			$('#blGrid').bootstrapTable('refresh',{silent: true});
+		});
+	}
+	});
+
+$(document).on('click', '[id^="report"]', function(){
+	var num = $(this).data('number');
+	$.post("ajax.php?module=allowlist&command=calllog",
+		{number: num},
+		function(data,status){
+			console.log(data);
+				$("#blReport").bootstrapTable({});
+				$('#blReport').bootstrapTable('load',data);
+		});
 		$("#numreport").modal("show");
 	});
+
 $('#Upload').on('click',function(){
 	var file = document.getElementById("allowlistfile");
 	var formData = new FormData();
@@ -131,10 +147,10 @@ $("#blkDelete").on("click",function(e){
 			numbers.push(cbrows[idx]);
 	});
 	$.post("ajax.php?module=allowlist&command=bulkdelete", { numbers: JSON.stringify(numbers) }).done(function(){
-																																																		numbers = null;
-																																																		$('#blGrid').bootstrapTable('refresh');
-																																																		$('#blGrid').bootstrapTable('HIDELoading');
-																																																	});
+			numbers = null;
+			$('#blGrid').bootstrapTable('refresh');
+			$('#blGrid').bootstrapTable('HIDELoading');
+	});
 
 	//Reset ui elements
 	//hide the action element in botnav

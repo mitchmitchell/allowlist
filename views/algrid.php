@@ -4,10 +4,10 @@
 </div>
 <table id="blGrid" data-escape="true" data-toolbar="#toolbar-all" data-url="ajax.php?module=allowlist&command=getJSON&jdata=grid" data-cache="false" data-maintain-selected="true" data-show-columns="true" data-show-toggle="true" data-toggle="table" data-pagination="true" data-search="true" class="table table-striped">
     <thead>
-          <tr>
-			<th data-checkbox="true" data-formatter="cbFormatter"></th>
-            <th data-field="number"><?php echo _("Number")?></th>
-            <th data-field="description" data-formatter="descFormatter"><?php echo _("Description")?></th>
+        <tr>
+            <th data-checkbox="true" data-formatter="cbFormatter"></th>
+            <th data-field="number" data-sortable="true"><?php echo _("Number")?></th>
+            <th data-field="description" data-formatter="descFormatter"  data-sortable="true"><?php echo _("Description")?></th>
             <th data-formatter="linkFormatter"><?php echo _("Actions")?></th>
         </tr>
     </thead>
@@ -23,6 +23,7 @@
 	function linkFormatter(value,row,idx){
 		var html = '<a href="#" data-toggle="modal" data-target="#addNumber" data-number="'+row['number']+'" data-description="'+row['description']+'" ><i class="fa fa-pencil"></i></a>';
 		html += '&nbsp;<a href="#" id="del'+row['number']+'" data-idx="'+idx+'" data-number="'+row['number']+'" ><i class="fa fa-trash"></i></a>';
+		html += '&nbsp;<a href="#" id="block'+row['number']+'" data-idx="'+idx+'" data-number="'+row['number']+'" data-description="'+row['description']+'" ><i class="fa fa-ban"></i></a>';
 		html += '&nbsp;<a href="#" id="report'+row['number']+'" data-number="'+row['number']+'"><i class="fa fa-area-chart"></i></a>';
 		return html;
 	}

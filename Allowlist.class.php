@@ -38,6 +38,7 @@ class Allowlist implements BMO
             case 'add':
             case 'edit':
             case 'del':
+            case 'block':
             case 'bulkdelete':
             case 'getJSON':
             case 'calllog':
@@ -84,6 +85,12 @@ class Allowlist implements BMO
             break;
             case 'del':
                 $ret = $this->numberDel($request['number']);
+                return array(
+                    'status' => $ret
+                );
+            break;
+            case 'block':
+                $ret = $this->numberBlock($request);
                 return array(
                     'status' => $ret
                 );
@@ -585,7 +592,8 @@ class Allowlist implements BMO
         if ($this->astman->connected())
         {
             $post['description'] == '' ? $post['description'] = '1' : $post['description'];
-            $this->astman->database_put('allowlist', $post['number'], $post['description']);
+            // $this->astman->database_put('allowlist', $post['number'], $post['description']);
+            $this->astman->database_put('allowlist', $post['number'], htmlentities($post['description'], ENT_COMPAT | ENT_HTML401, "UTF-8"));
         }
         else
         {
@@ -604,6 +612,25 @@ class Allowlist implements BMO
         if ($this->astman->connected())
         {
             return ($this->astman->database_del('allowlist', $number));
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    /**
+     * Block a number - add the number to the blacklist database
+     * @param  array $post Array of allowlist/blacklist params
+     * @return boolean         Status of block
+     */
+    public function numberBlock($post)
+    {
+        if ($this->astman->connected())
+        {
+           // $this->FreePBX->Blacklist->numberAdd($post);
+            $this->FreePBX->Blacklist->numberAdd($post);
+            return ($this->numberDel($post['number']));
         }
         else
         {

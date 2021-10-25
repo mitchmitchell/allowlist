@@ -53,7 +53,7 @@ if(isset($message)){
 													<div class="row">
 														<div class="form-group">
 															<div class="col-md-4">
-																<b><?php echo _("Allow Asterisk Phonebook and Contact Manager Callers") ?></b>
+																<b><?php echo _("Allow Phonebook and CM Callers") ?></b>
 																<i class="fa fa-question-circle fpbx-help-icon" data-for="knowncallers"></i>
 															</div>
 															<div class="col-md-8 radioset">
