@@ -39,6 +39,7 @@ class Allowlist implements BMO
             case 'edit':
             case 'del':
             case 'block':
+            case 'pause':
             case 'bulkdelete':
             case 'getJSON':
             case 'calllog':
@@ -95,6 +96,12 @@ class Allowlist implements BMO
                     'status' => $ret
                 );
             break;
+            case 'pause':
+                $ret = $this->pauseSet($request['pause']);
+                return array(
+                    'status' => $ret
+                );
+            break;
             case 'calllog':
                 $number = $request['number'];
                 $sql = 'SELECT calldate FROM asteriskcdrdb.cdr WHERE src = ?';
@@ -114,7 +121,7 @@ class Allowlist implements BMO
                         {
                             $number = $item['number'];
                             $description = $item['description'];
-                            if ($number == 'dest' || $number == 'knowncallers' || substr($number, 0, 7) == 'autoadd' || substr($number, 0, 3) == 'did')
+                            if ($number == 'dest' || $number == 'pause' || $number == 'knowncallers' || substr($number, 0, 7) == 'autoadd' || substr($number, 0, 3) == 'did')
                             {
                                 continue;
                             }
@@ -161,8 +168,8 @@ class Allowlist implements BMO
         unset($fcc);
 
         $fcc = new \featurecode('allowlist', 'allowlist_pause_toggle');
-        $fcc->setDescription('Temporarily pause or unpause the Allowlist module operation system wide');
-        $fcc->setHelpText('Toggle to pause and unpause Allowlist system wide.');
+        $fcc->setDescription('Pause or unpause Allowlist checking');
+        $fcc->setHelpText('Temporarily pause or unpause the Allowlist module operation system wide');
         $fcc->setDefault('*39');
         $fcc->setProvideDest(true);
         $fcc->update();
@@ -193,6 +200,7 @@ class Allowlist implements BMO
             {
                 case 'settings':
                     $this->destinationSet($destination);
+                    $this->pauseSet($request['pause']);
                     $this->allowknowncallersSet($request['knowncallers']);
                 break;
                 case 'import':
@@ -387,7 +395,7 @@ class Allowlist implements BMO
         $ext->add($id, $c, '', new \ext_wait(1));
         $ext->add($id, $c, 'start', new \ext_digittimeout(5));
         $ext->add($id, $c, '', new \ext_responsetimeout(10));
-        $ext->add($id, $c, '', new \ext_read('allownr', 'entr-num-rmv-blklist&vm-then-pound'));
+        $ext->add($id, $c, '', new \ext_read('allownr', 'entr-num-rmv-allowlist&vm-then-pound'));
         $ext->add($id, $c, '', new \ext_saydigits('${allownr}'));
         // i18n - Some languages need this is a different format. If we don't
         // know about the language, assume english
@@ -537,6 +545,7 @@ class Allowlist implements BMO
         $allowlistitems = $this->getAllowlist();
         $destination = $this->destinationGet();
         $filter_knowncallers = $this->allowknowncallersGet() == 1;
+        $pause = $this->pauseGet() != 0;
         $view = isset($_REQUEST['view']) ? $_REQUEST['view'] : '';
         switch ($view)
         {
@@ -548,7 +557,8 @@ class Allowlist implements BMO
                 return load_view(__DIR__ . '/views/general.php', array(
                     'allowlist' => $allowlistitems,
                     'destination' => $destination,
-                    'filter_knowncallers' => $filter_knowncallers
+                    'filter_knowncallers' => $filter_knowncallers,
+                    'pause' => $pause
                 ));
         }
     }
@@ -565,7 +575,7 @@ class Allowlist implements BMO
             $allowlisted = array();
             foreach ($list as $k => $v)
             {
-                if ($k == '/allowlist/dest' || $k == '/allowlist/knowncallers' || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
+                if ($k == '/allowlist/dest' || $k == '/allowlist/pause' || $k == '/allowlist/knowncallers' || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
                 {
                     continue;
                 }
@@ -620,7 +630,7 @@ class Allowlist implements BMO
     }
 
     /**
-     * Block a number - add the number to the blacklist database
+     * Block a number - move the number to the blacklist database
      * @param  array $post Array of allowlist/blacklist params
      * @return boolean         Status of block
      */
@@ -678,6 +688,47 @@ class Allowlist implements BMO
             throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
         }
     }
+
+
+    /**
+     * Whether to pause allowlist checking globally
+     * @param  boolean $pause True to pause, false otherwise
+     */
+    public function pauseSet($pause)
+    {
+        if ($this->astman->connected())
+        {
+            // Remove filtering for pauseed/unknown cid
+            $this->astman->database_del('allowlist', 'pause');
+            // Add it back if it's checked
+            if (!empty($pause))
+            {
+                $secs = strtotime(date('Y-m-d H:i:s')) + 86400;
+                $this->astman->database_put('allowlist', 'pause', $secs);
+            }
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    /**
+     * Get status of pause flag
+     * @return string 1 if paused, 0 otherwise
+     */
+    public function pauseGet()
+    {
+        if ($this->astman->connected())
+        {
+            return $this->astman->database_get('allowlist', 'pause') != 0;
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
 
     /**
      * Whether to allow contact manager callers

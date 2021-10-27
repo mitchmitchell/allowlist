@@ -72,7 +72,33 @@ if(isset($message)){
 												</div>
 											</div>
 										</div>
-										<!--End Treat CM Callers as Allowlisted-->
+										<!--enable/disable global pause flag-->
+										<div class="element-container">
+											<div class="row">
+												<div class="col-md-12">
+													<div class="row">
+														<div class="form-group">
+															<div class="col-md-4">
+																<b><?php echo _("Pause Allowlist Checking") ?></b>
+																<i class="fa fa-question-circle fpbx-help-icon" data-for="pause"></i>
+															</div>
+															<div class="col-md-8 radioset">
+																<input type="radio" name="pause" id="pauseyes" value="1" <?php echo ($pause === true?"CHECKED":"") ?>>
+																<label for="pauseyes"><?php echo _("Yes");?></label>
+																<input type="radio" name="pause" id="pauseno" value="" <?php echo ($pause === true?"":"CHECKED") ?>>
+																<label for="pauseno"><?php echo _("No");?></label>
+															</div>
+														</div>
+													</div>
+												</div>
+											</div>
+											<div class="row">
+												<div class="col-md-12">
+													<span id="pause-help" class="help-block fpbx-help-block"><?php echo _("Pause or Unpause Allowlist Checking Globally")?></span>
+												</div>
+											</div>
+										</div>
+										<!--End enable/disable global pause flag-->
 										<!--Destination-->
 										<div class="element-container">
 											<div class="row">

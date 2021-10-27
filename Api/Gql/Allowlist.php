@@ -109,6 +109,13 @@ class Allowlist extends Base {
 		$user->setDescription('Allowlist Settings');
 		$user->addFieldCallback(function() {
 			return [
+				'pauseAllowlist' => [
+					'type' => Type::boolean(),
+					'description' => 'Pause or unpause allowlist processing globally',
+					'resolve' => function ($root, $args) {
+						return $this->freepbx->Allowlist->pauseGet() == 1 ? true : false;
+					}
+				],
 				'destinationConnection' => [
 					'type' => $this->typeContainer->get('destination')->getObject(),
 					'description' => 'Destination for non allowlisted calls',
