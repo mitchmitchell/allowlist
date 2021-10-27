@@ -32,7 +32,7 @@ class Allowlist extends Command {
 				new InputOption('list', 'l', InputOption::VALUE_NONE, _('List all allowlist entries')),
 				new InputOption('did', 'i', InputOption::VALUE_NONE, _('Set whether allowlist is processed for inbound did')),
 				new InputOption('route', 'o', InputOption::VALUE_NONE, _('Set whether autoadd to the allowlist is processed for outbound route')),
-				new InputOption('settings', 's', InputOption::VALUE_NONE, _('Enable/Disable options for allow list processing')),
+				new InputOption('settings', 's', InputOption::VALUE_NONE, _('Enable/Disable settings for allow list processing')),
 				new InputOption('import', 'm', InputOption::VALUE_REQUIRED, _('Import settings from file')),
 				new InputOption('export', 'x', InputOption::VALUE_REQUIRED, _('Export settings to file'))
 			));
@@ -52,7 +52,7 @@ class Allowlist extends Command {
 			}
 			$table->setRows($rows);
 			$table->render();
-			$this->displayOptions($allowlist, $output)->render();
+			$this->displaySettings($allowlist, $output)->render();
 			$this->displayDestination($allowlist, $output)->render();
 			$this->displayDIDs($allowlist, $output)->render();
 			$this->displayRoutes($allowlist, $output)->render();
@@ -151,11 +151,11 @@ class Allowlist extends Command {
 			$optionids = array(1 => 'allow', 2 => 'pause');
 			$output->writeln(_('Choose a setting to enable/disable'));
 			$helper = $this->getHelper('question');
-			$question = new ChoiceQuestion($this->displayOptions($allowlist, $output)->render(),$optionids,-1);
+			$question = new ChoiceQuestion($this->displaySettings($allowlist, $output)->render(),$optionids,-1);
 			$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
 			$this->toggleOptions($allowlist,$id);
 			$output->writeln("<question>toggling setting option: ". $id ."</question>");
-			$this->displayOptions($allowlist, $output)->render();;
+			$this->displaySettings($allowlist, $output)->render();;
 		}
 
 		if($input->getOption('destination')) {
@@ -252,10 +252,10 @@ class Allowlist extends Command {
 		return $output;
 	}
 
-	private function displayOptions($allowlist, $output)
+	private function displaySettings($allowlist, $output)
 	{
 		$table = new Table($output);
-		$table->setHeaders(array(_('Option'),_('Value')));
+		$table->setHeaders(array(_('Setting'),_('Value')));
 		$rows = array();
 		$rows[] = array(
 			'allow cm/phonebook known callers',
