@@ -146,7 +146,7 @@ class Allowlist implements BMO
         $fcc = new \featurecode('allowlist', 'allowlist_add');
         $fcc->setDescription('Add a number to the allowlist');
         $fcc->setHelpText('Adds a number to the Allowlist Module.  All calls from that number to the system will will be allowed to proceed normally.  Manage these in the Allowlist module.');
-        $fcc->setDefault('*36');
+        $fcc->setDefault('*38');
         $fcc->setProvideDest(true);
         $fcc->update();
         unset($fcc);
@@ -154,7 +154,7 @@ class Allowlist implements BMO
         $fcc = new \featurecode('allowlist', 'allowlist_remove');
         $fcc->setDescription('Remove a number from the allowlist');
         $fcc->setHelpText('Removes a number from the Allowlist Module');
-        $fcc->setDefault('*37');
+        $fcc->setDefault('*39');
         $fcc->setProvideDest(true);
         $fcc->update();
         unset($fcc);
@@ -162,7 +162,7 @@ class Allowlist implements BMO
         $fcc = new \featurecode('allowlist', 'allowlist_last');
         $fcc->setDescription('Add the last caller to the allowlist');
         $fcc->setHelpText('Adds the last caller to the Allowlist Module.  All calls from that number to the system will be allowed to proceed normally.');
-        $fcc->setDefault('*38');
+        $fcc->setDefault('*40');
         $fcc->setProvideDest(true);
         $fcc->update();
         unset($fcc);
@@ -170,7 +170,7 @@ class Allowlist implements BMO
         $fcc = new \featurecode('allowlist', 'allowlist_pause_toggle');
         $fcc->setDescription('Pause or unpause Allowlist checking');
         $fcc->setHelpText('Temporarily pause or unpause the Allowlist module operation system wide');
-        $fcc->setDefault('*39');
+        $fcc->setDefault('*41');
         $fcc->setProvideDest(true);
         $fcc->update();
         unset($fcc);
