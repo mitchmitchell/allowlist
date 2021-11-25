@@ -149,7 +149,7 @@ $("#blkDelete").on("click",function(e){
 	$.post("ajax.php?module=allowlist&command=bulkdelete", { numbers: JSON.stringify(numbers) }).done(function(){
 			numbers = null;
 			$('#blGrid').bootstrapTable('refresh');
-			$('#blGrid').bootstrapTable('HIDELoading');
+			$('#blGrid').bootstrapTable('hideLoading');
 	});
 
 	//Reset ui elements

@@ -174,8 +174,8 @@ function allowlist_hookGet_config($engine) {
                                 }
                         } // else no DID's defined. Not even a catchall.
                         $routelist = core_routing_list();
-			$trunklist = FreePBX::Core()->getRouteTrunksByID($routelist[0]['route_id']); // fix for FC-346
-			if (is_array($routelist) & !empty($routelist) & !empty($trunklist)) { // make sure we do not fail if no outbound routes are defined.
+                        $trunklist = FreePBX::Core()->getRouteTrunksByID($routelist[0]['route_id']); // fix for FC-346
+                        if (is_array($routelist) & !empty($routelist) & !empty($trunklist)) { // make sure we do not fail if no outbound routes are defined.
                                 $context = "macro-dialout-trunk";
                                 $exten = "s";
                                 $splice_position = 0;

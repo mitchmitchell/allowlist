@@ -2,18 +2,20 @@
 	<rawname>allowlist</rawname>
 	<repo>unsupported</repo>
 	<name>Allow List</name>
-	<version>15.0.6</version>
+	<version>15.0.8</version>
 	<publisher>Sangoma Technologies Corporation</publisher>
 	<license>GPLv3+</license>
 	<licenselink>http://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
 	<category>Admin</category>
 	<description>
-		This module is used to manage a system wide list of allowed callers.
+		This module is used to manage a system wide list of allowlisted callers.
 	</description>
 	<changelog>
-		*15.0.6* Fix crash when outbound route exists but no trunks defined
-		*15.0.5* Fix issues with backup and restore not saving settings information
-		*15.0.4* Add sorting, feature code pause, transfer number to blacklist action
+                *15.0.8* Fix crash when outbound route exists but no trunks defined
+                *15.0.7* Fix issues with backup and restore not saving settings information
+                *15.0.6* Add sorting, feature code pause, transfer number to blacklist action
+		*15.0.5* Fix i18n files 
+		*15.0.4* Release/15.0 
 		*15.0.3* FREEPBX-FC-345 fix outroute splice failure if no outroutes defined 
 		*15.0.2* Packaging of ver 15.0.2
 		*15.0.1* Initial

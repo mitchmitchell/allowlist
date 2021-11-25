@@ -104,7 +104,7 @@ class Allowlist implements BMO
             break;
             case 'calllog':
                 $number = $request['number'];
-                $sql = 'SELECT calldate FROM asteriskcdrdb.cdr WHERE src = ?';
+                $sql = sprintf('SELECT DISTINCT calldate FROM %s WHERE src = ?', $this->FreePBX->Cdr->getDbTable());
                 $cdrdbh =  $this->FreePBX->Cdr->getCdrDbHandle(); 
                 $stmt = $cdrdbh->prepare($sql);
                 $stmt->execute(array($number));
