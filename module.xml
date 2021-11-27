@@ -2,7 +2,7 @@
 	<rawname>allowlist</rawname>
 	<repo>unsupported</repo>
 	<name>Allow List</name>
-	<version>15.0.8</version>
+	<version>15.0.9</version>
 	<publisher>Sangoma Technologies Corporation</publisher>
 	<license>GPLv3+</license>
 	<licenselink>http://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
@@ -11,6 +11,7 @@
 		This module is used to manage a system wide list of allowlisted callers.
 	</description>
 	<changelog>
+                *15.0.9* Allow user to specify leading digits to remove and length of number to store when autoadding numbers to allowlist
                 *15.0.8* Fix crash when outbound route exists but no trunks defined
                 *15.0.7* Fix issues with backup and restore not saving settings information
                 *15.0.6* Add sorting, feature code pause, transfer number to blacklist action
