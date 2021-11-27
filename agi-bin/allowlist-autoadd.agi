@@ -23,41 +23,43 @@ if (!$AGI || !$FreePBX) {
 
 $AGI->verbose("script starting up");
 
-$dnid = substr($AGI->request['agi_dnid'],-10,10);
-#$dnid = $AGI->request['agi_dnid'];
+$dnid = $AGI->request['agi_dnid'];
 
 $res = $AGI->get_variable("DIAL_NUMBER");
 
 if ($res['result'] == 0) {
 	$dial_number = $dnid;
 } else {
-        $dial_number = substr($res['data'],-10,10);
-#       $dial_number = $res['data'];
+       $dial_number = $res['data'];
 }
 
-$AGI->verbose("\$dial_number = \"$dial_number\"");
+$AGI->verbose("initial \$dial_number = \"$dial_number\"");
+$digit_remcount = 0;
+$digit_stocount = 99;
  
-// get asterisk channel var name to store result
-if ($argc > 1) {
-	$channel_var = trim($argv[1]);
-	$AGI->verbose("\$channel_var = \"$channel_var\"");
-} else {
-	$AGI->verbose("No channel variable arguement provided, using allowlisted.");
-	$channel_var = "allowlisted";
+// get the number of leading digits to remove and the number of digits to store in the number automatically added to the allowlist
+if ($argc > 2) {
+	$digit_remcount = (int)trim($argv[2]);
+	$digit_stocount = (int)trim($argv[3]);
 }
 
-$AGI->verbose("searching for \"$dial_number\" in asterisk database");
+$AGI->verbose("\$digit_remcount = \"$digit_remcount\"");
+$AGI->verbose("\$digit_stocount = \"$digit_stocount\"");
 
-if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) ) { // dialed number is not part of any of the allowed numbers so add it
+$dial_number = substr($dial_number,$digit_remcount,$digit_stocount);
+
+$AGI->verbose("searching for final \"$dial_number\" in asterisk database");
+
+if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) && (strlen($dial_number) != 0)) { // dialed number is not part of any of the allowed numbers so add it if it is not empty
 	$AGI->verbose("adding number to allowlist");
 	$done = $AGI->database_put('allowlist',$dial_number,'automatically added');
 	if ($done['result'] == 0) {
-		$AGI->verbose("could not add $dial_number to allowlist.");
+		$AGI->verbose("could not add $dial_number to allowlist");
 	} else {
-		$AGI->verbose("added $dial_number to allowlist.");
+		$AGI->verbose("added $dial_number to allowlist");
 	}
 } else {
-	$AGI->verbose("$dial_number found in asterisk database not autoadding to allowlist.");
+	$AGI->verbose("$dial_number empty or found in asterisk database, not autoadding to allowlist");
 }
 
-$AGI->verbose("scripted completed.");
+$AGI->verbose("scripted completed");

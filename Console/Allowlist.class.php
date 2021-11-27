@@ -111,7 +111,7 @@ class Allowlist extends Command {
 				$allowlist->routeDelete($id);
 			} else if($routes[($id - 1)]['checked'] == 'No'){
 				$output->writeln(sprintf(_('Enabling Outbound Route %s'),$routes[($id - 1)]['name']));
-				$allowlist->routeAdd($id);
+				$allowlist->routeAdd($id,0,99);
 			}
 			$routes = $this->listOutgoingRoutes($allowlist);
 			$table = new Table($output);

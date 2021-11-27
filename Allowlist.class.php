@@ -894,12 +894,25 @@ class Allowlist implements BMO
             throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
         }
     }
-
+/******************
     public function routeAdd($id)
     {
         if ($this->astman->connected())
         {
-            $this->astman->database_put('allowlist', 'autoadd/' . $id, true);
+            //$this->astman->database_put('allowlist', 'autoadd/' . $id, true);
+            $this->astman->database_put('allowlist', 'autoadd/' . $id, "1,0,99");
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+************************/
+    public function routeAdd($id,$ld,$sd)
+    {
+        if ($this->astman->connected())
+        {
+            $this->astman->database_put('allowlist', 'autoadd/' . $id, "1,$ld,$sd");
         }
         else
         {
@@ -931,6 +944,46 @@ class Allowlist implements BMO
             else
             {
                 return false;
+            }
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    public function routeRemCount($id)
+    {
+        if ($this->astman->connected())
+        {
+            $var = $this->astman->database_get('allowlist', 'autoadd/' . $id);
+            if (($var) && (str_contains($var, ",")) && (count(explode(",",$var)) > 1))
+            {
+                return explode(",",$var)[1];
+            }
+            else
+            {
+                return null;
+            }
+        }
+        else
+        {
+            throw new RuntimeException('Cannot connect to Asterisk Manager, is Asterisk running?');
+        }
+    }
+
+    public function routeStoCount($id)
+    {
+        if ($this->astman->connected())
+        {
+            $var = $this->astman->database_get('allowlist', 'autoadd/' . $id);
+            if (($var) && (str_contains($var, ",")) && (count(explode(",",$var)) > 2))
+            {
+                return explode(",",$var)[2];
+            }
+            else
+            {
+                return null;
             }
         }
         else
