@@ -37,7 +37,7 @@ if(isset($message)){
 							</ul>
 								<div class="tab-content display">
 									<div role="tabpanel" id="allowlist" class="tab-pane active">
-										<?php echo load_view(__DIR__.'/algrid.php',array('allowlist' => $allowlist));?>
+										<?php echo load_view(__DIR__.'/grid.php',array('allowlist' => $allowlist));?>
 									</div>
 									<div role="tabpanel" id="importexport" class="tab-pane">
 										<div class="alert alert-info">
@@ -130,6 +130,7 @@ if(isset($message)){
 				</div>
 				<!--Modals-->
 					<?php echo load_view(__DIR__.'/addnumber.php',array());?>
+					<?php echo load_view(__DIR__.'/addlist.php',array());?>
 				<!--Modals-->
 			</div>
 		</div>

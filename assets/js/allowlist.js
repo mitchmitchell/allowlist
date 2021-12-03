@@ -55,7 +55,7 @@ $('#submitnumber').on('click',function(){
 				}else {
 					alert(sprintf(_("Added %s to the allowlist."), num));
 				}
-				$('#blGrid').bootstrapTable('refresh',{});
+				$('#alGrid').bootstrapTable('refresh',{});
 				$("#addNumber").modal('hide');
 			} else {
 				alert(data.message);
@@ -73,7 +73,7 @@ $(document).on('click', '[id^="del"]', function(){
 			action : "delete",
 			number : num,
 		}).done(function(){
-			$('#blGrid').bootstrapTable('refresh',{silent: true});
+			$('#alGrid').bootstrapTable('refresh',{silent: true});
 		});
 	}
 	});
@@ -89,7 +89,7 @@ $(document).on('click', '[id^="block"]', function(){
 			number : num,
 			description : des,
 		}).done(function(){
-			$('#blGrid').bootstrapTable('refresh',{silent: true});
+			$('#alGrid').bootstrapTable('refresh',{silent: true});
 		});
 	}
 	});
@@ -141,15 +141,15 @@ $('input[id^="actonthis"],#action-toggle-all').change(function(){
 $("#blkDelete").on("click",function(e){
 	e.preventDefault();
 	var numbers = [];
-	$('#blGrid').bootstrapTable('showLoading');
+	$('#alGrid').bootstrapTable('showLoading');
 	$('input[name="btSelectItem"]:checked').each(function(){
 			var idx = $(this).data('index');
 			numbers.push(cbrows[idx]);
 	});
 	$.post("ajax.php?module=allowlist&command=bulkdelete", { numbers: JSON.stringify(numbers) }).done(function(){
 			numbers = null;
-			$('#blGrid').bootstrapTable('refresh');
-			$('#blGrid').bootstrapTable('hideLoading');
+			$('#alGrid').bootstrapTable('refresh');
+			$('#alGrid').bootstrapTable('hideLoading');
 	});
 
 	//Reset ui elements

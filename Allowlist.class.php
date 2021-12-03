@@ -114,7 +114,7 @@ class Allowlist implements BMO
             case 'getJSON':
                 switch ($request['jdata'])
                 {
-                    case 'grid':
+                    case 'algrid':
                         $ret = array();
                         $allowlist = $this->getAllowlist();
                         foreach ($allowlist as $item)
@@ -135,10 +135,38 @@ class Allowlist implements BMO
                         }
                         return $ret;
                     break;
+                    case 'grid':
+                        $ret = array();
+                        $allowlistlist = array("1"=>array("name"=>"allowlist one","date"=>"1/1/2021","description"=>"this is a test list of lists - list one"),
+                                               "2"=>array("name"=>"allowlist two","date"=>"1/1/2021","description"=>"this is a test list of lists - list two"),
+                                               "3"=>array("name"=>"allowlist three","date"=>"1/1/2021","description"=>"this is a test list of lists - list three"),
+                                               "4"=>array("name"=>"allowlist four","date"=>"1/1/2021","description"=>"this is a test list of lists - list four"));
+                        foreach ($allowlistlist as $item)
+                        {
+                            $name = $item['name'];
+                            $date = $item['date'];
+                            $description = $item['description'];
+                            $ret[] = array(
+                                'name' => $name,
+                                'date' => $date,
+                                'description' => $description
+                            );
+                        }
+                        return $ret;
+                    break;
                 }
             break;
         }
     }
+
+
+    public function getRightNav($request) {
+           // if($request['view'] === 'form'){
+                    return load_view(__DIR__."/views/bootnav.php",array());
+           // }
+           // return '';
+    }
+
 
     //BMO Methods
     public function install()
@@ -543,6 +571,10 @@ class Allowlist implements BMO
     public function showPage()
     {
         $allowlistitems = $this->getAllowlist();
+        $allowlistlist = array("1"=>array("name"=>"allowlist one","date"=>"1/1/2021","description"=>"this is a test list of lists - list one"),
+                               "2"=>array("name"=>"allowlist two","date"=>"1/1/2021","description"=>"this is a test list of lists - list two"),
+                               "3"=>array("name"=>"allowlist three","date"=>"1/1/2021","description"=>"this is a test list of lists - list three"),
+                               "4"=>array("name"=>"allowlist four","date"=>"1/1/2021","description"=>"this is a test list of lists - list four"));
         $destination = $this->destinationGet();
         $filter_knowncallers = $this->allowknowncallersGet() == 1;
         $pause = $this->pauseGet() != 0;
@@ -550,6 +582,10 @@ class Allowlist implements BMO
         switch ($view)
         {
             case 'grid':
+                return load_view(__DIR__ . '/views/grid.php', array(
+                    'allowlist' => $allowlistlist
+                ));
+            case 'algrid':
                 return load_view(__DIR__ . '/views/algrid.php', array(
                     'allowlist' => $allowlistitems
                 ));
