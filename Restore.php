@@ -62,7 +62,9 @@ class Restore Extends Base\RestoreBase{
 	}
 
 	private function describeSkipped($key, $reason){
-		return substr(preg_replace('/[\x00-\x1F\x7F]/', '?', $key), 0, 40) . ': ' . $reason;
+		// Masked, truncated and HTML-escaped: restore logs can be shown in the web UI.
+		$key = mb_substr(preg_replace('/[\x00-\x1F\x7F]/', '?', $key), 0, 40, 'UTF-8');
+		return htmlspecialchars($key . ': ' . $reason, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 	}
 	public function deleteOldData(){
 		$this->astman = $this->FreePBX->astman;

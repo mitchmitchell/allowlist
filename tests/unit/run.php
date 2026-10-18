@@ -191,7 +191,7 @@ $r = $al->bulkhandlerImport('allowlist', array(
 	array('number' => "+12025550132", 'description' => ''),
 ));
 check($r['status'] === false && count($r['rejected']) === 3, 'bulk import returns status false with 3 rejected rows');
-check(strpos($r['message'], 'row 2 (dest)') !== false && strpos($r['message'], 'row 3') !== false && strpos($r['message'], 'row 4 (2025550131)') !== false, 'bulk import message names the rejected rows');
+check(strpos($r['message'], 'row 2 (dest)') !== false && strpos($r['message'], 'row 3 ') !== false && strpos($r['message'], 'row 4 (2025550131)') !== false, 'bulk import message names the real rejected rows (multi-row call)');
 check(isset($fp->astman->db['/allowlist/2025550130'], $fp->astman->db['/allowlist/+12025550132']) && $fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1', 'bulk import adds valid rows, dest untouched');
 $r = $al->bulkhandlerImport('allowlist', array(array('number' => '2025550133', 'description' => 'x')));
 check($r === array('status' => true), 'bulk import of valid rows returns status true');
@@ -207,6 +207,27 @@ check(!isset($fp->astman->db['/allowlist/2025550113']) && isset($fp->astman->db[
 // ---- Should-fix (b): CLI reports a rejected destination
 $console = file_get_contents($root . '/Console/Allowlist.class.php');
 check(preg_match('/if \(!\$allowlist->destinationSet\(\$destnames\[\$id\]\[2\]\)\) \{\s*\$output->writeln\(.<error>. \. \$allowlist->getLastError\(\)/', $console) === 1, 'CLI checks destinationSet() and prints the error');
+
+// ---- #1 review 5564688977: bulk import message is HTML-safe (bulkhandler UI uses innerHTML)
+list($fp, $al) = fresh();
+$xss = array('<img src=x onerror=alert(1)>', '"><svg onload=alert(1)>', "' onmouseover='alert(1)", '<script>alert(1)</script>');
+foreach ($xss as $p) {
+	$r = $al->bulkhandlerImport('allowlist', array(array('number' => $p, 'description' => 'x')));
+	$m = $r['message'];
+	check($r['status'] === false && strpos($m, '<') === false && strpos($m, '>') === false && strpos($m, '"') === false && strpos($m, "'") === false, 'bulk import message escapes ' . $p);
+	check(strpos($m, 'row ') === false, 'single-row request (UI path) has no misleading row number: ' . $p);
+}
+$r = $al->bulkhandlerImport('allowlist', array(array('number' => '<img src=x onerror=alert(1)>')));
+check(strpos($r['message'], '&lt;img src=x onerror=alert(1)&gt;') !== false, 'escaped payload is still readable');
+$r = $al->bulkhandlerImport('allowlist', array(array('number' => str_repeat('é', 60))));
+check(preg_match('//u', $r['message']) === 1 && strpos($r['message'], '(' . str_repeat('é', 40) . ')') !== false, 'number truncated to 40 characters with mb_substr (valid UTF-8)');
+list($fp, $al) = fresh();
+$fp->Allowlist = $al;
+$restore = new \FreePBX\modules\Allowlist\Restore($fp);
+$skipped = $restore->restoreAllowlistEntries(array('<img src=x onerror=alert(1)>' => 'x', str_repeat('ü', 50) => 'y'));
+$logged = implode("\n", array_column($restore->logs, 1));
+check(count($skipped) === 2 && strpos($logged, '<') === false && strpos($logged, '&lt;img') !== false, 'restore skip-log is HTML-escaped');
+check(preg_match('//u', $logged) === 1 && strpos($logged, str_repeat('ü', 40) . ':') !== false, 'restore skip-log truncates with mb_substr');
 
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

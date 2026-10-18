@@ -1037,12 +1037,18 @@ class Allowlist implements BMO
         {
             case 'allowlist':
                 $rejected = array();
-                foreach ($rawData as $row => $data)
+                // The bulkhandler UI posts one row per request and prints its own row number,
+                // so only multi-row calls (direct import, CLI) label rows here.
+                $multi = count($rawData) > 1;
+                $rowNo = 0;
+                foreach ($rawData as $data)
                 {
+                    $rowNo++;
+                    $where = $multi ? sprintf(_('row %d'), $rowNo) . ' ' : '';
                     $number = is_array($data) && isset($data['number']) ? $data['number'] : '';
                     if ($number === '' || $number === null)
                     {
-                        $rejected[] = sprintf(_('row %s: %s'), $row + 1, _('Phone Number Required'));
+                        $rejected[] = $where . _('Phone Number Required');
                         continue;
                     }
                     //Skip existing numbers. Array is only populated if replace is false.
@@ -1052,8 +1058,10 @@ class Allowlist implements BMO
                     }
                     if (!$this->numberAdd($data))
                     {
+                        // The message is inserted with innerHTML by the bulkhandler UI: escape the echoed number.
                         $shown = is_scalar($number) ? preg_replace('/[\x00-\x1F\x7F]/', '?', (string)$number) : '?';
-                        $rejected[] = sprintf(_('row %s (%s): %s'), $row + 1, substr($shown, 0, 40), $this->lastError);
+                        $shown = htmlspecialchars(mb_substr($shown, 0, 40, 'UTF-8'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                        $rejected[] = sprintf('%s(%s): %s', $where, $shown, htmlspecialchars($this->lastError, ENT_QUOTES, 'UTF-8'));
                     }
                }
                if (!empty($rejected))
