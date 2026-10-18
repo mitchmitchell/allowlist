@@ -16,7 +16,7 @@ class Allowlist implements BMO
     /** Digits only, optional leading +, 1-20 digits (ADR-AL-1). Mirrored in agi-bin/allowlist-common.php. */
     const NUMBER_PATTERN = '/^\+?[0-9]{1,20}$/D';
     /** Dialplan form of NUMBER_PATTERN; [+] keeps backslashes out of extensions_additional.conf. */
-    const DIALPLAN_NUMBER_REGEX = '^[+]?[0-9]+$';
+    const DIALPLAN_NUMBER_REGEX = '^[+]?[0-9]{1,20}$';
     const DESCRIPTION_MAX = 255;
 
     private $lastError = '';
@@ -217,17 +217,25 @@ class Allowlist implements BMO
                     return array('status' => false, 'message' => _('Invalid request'));
                 }
                 $rejected = array();
+                $deleted = 0;
                 foreach ($numbers as $number)
                 {
-                    if (!$this->numberDel($number))
+                    if ($this->numberDel($number))
+                    {
+                        $deleted++;
+                    }
+                    else
                     {
                         $rejected[] = is_scalar($number) ? (string)$number : '?';
                     }
                 }
                 if (!empty($rejected))
                 {
+                    // Partial success still reports status true so the grid refreshes; rejected entries are listed.
                     return array(
-                        'status' => false,
+                        'status' => $deleted > 0,
+                        'deleted' => $deleted,
+                        'rejected' => $rejected,
                         'message' => sprintf(_('Not deleted (not allowlist numbers): %s'), implode(', ', $rejected))
                     );
                 }
@@ -1028,21 +1036,33 @@ class Allowlist implements BMO
         switch ($type)
         {
             case 'allowlist':
-                foreach ($rawData as $data)
+                $rejected = array();
+                foreach ($rawData as $row => $data)
                 {
-                    if (empty($data['number']))
+                    $number = is_array($data) && isset($data['number']) ? $data['number'] : '';
+                    if ($number === '' || $number === null)
                     {
-                        return array(
-                            'status' => false,
-                            'message' => _('Phone Number Required')
-                        );
+                        $rejected[] = sprintf(_('row %s: %s'), $row + 1, _('Phone Number Required'));
+                        continue;
                     }
                     //Skip existing numbers. Array is only populated if replace is false.
-                    if (in_array($data['number'], $blistnums))
+                    if (in_array($number, $blistnums, true))
                     {
                         continue;
                     }
-                    $this->numberAdd($data);
+                    if (!$this->numberAdd($data))
+                    {
+                        $shown = is_scalar($number) ? preg_replace('/[\x00-\x1F\x7F]/', '?', (string)$number) : '?';
+                        $rejected[] = sprintf(_('row %s (%s): %s'), $row + 1, substr($shown, 0, 40), $this->lastError);
+                    }
+               }
+               if (!empty($rejected))
+               {
+                   return array(
+                       'status' => false,
+                       'rejected' => $rejected,
+                       'message' => sprintf(_('%d row(s) were not imported: %s'), count($rejected), implode('; ', array_slice($rejected, 0, 20)) . (count($rejected) > 20 ? ' ...' : ''))
+                   );
                }
             break;
         }

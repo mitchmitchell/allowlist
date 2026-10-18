@@ -27,6 +27,7 @@ namespace {
 		public function database_put($fam, $key, $val) { $this->db["/$fam/$key"] = (string)$val; return true; }
 		public function database_get($fam, $key) { return isset($this->db["/$fam/$key"]) ? $this->db["/$fam/$key"] : false; }
 		public function database_del($fam, $key) { $had = isset($this->db["/$fam/$key"]); unset($this->db["/$fam/$key"]); return $had; }
+		public function database_deltree($fam) { foreach (array_keys($this->db) as $k) { if (strpos($k, "/$fam/") === 0) { unset($this->db[$k]); } } return true; }
 		public function database_show($fam) {
 			$out = array();
 			foreach ($this->db as $k => $v) { if (strpos($k, "/$fam/") === 0) { $out[$k] = $v; } }
@@ -44,3 +45,16 @@ namespace {
 		public function __construct() { $this->astman = new FakeAstman(); $this->Blacklist = new FakeBlacklist(); $this->Destinations = new FakeDestinations(); }
 	}
 }
+
+namespace FreePBX\modules\Backup {
+	// Stand-in for the Backup module's RestoreBase (only what Allowlist\Restore uses).
+	class RestoreBase {
+		public $FreePBX;
+		public $logs = array();
+		public $featureCodesRestored = false;
+		public function __construct($freepbx) { $this->FreePBX = $freepbx; }
+		public function log($message, $level = 'INFO') { $this->logs[] = array($level, $message); }
+		public function restoreLegacyFeatureCodes($pdo) { $this->featureCodesRestored = true; }
+	}
+}
+

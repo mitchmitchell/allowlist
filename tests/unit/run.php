@@ -5,6 +5,7 @@ require __DIR__ . '/bootstrap.php';
 $root = dirname(__DIR__, 2);
 require $root . '/Allowlist.class.php';
 require $root . '/agi-bin/allowlist-common.php';
+require $root . '/Restore.php';
 
 use FreePBX\modules\Allowlist;
 
@@ -129,11 +130,11 @@ $check = $ctx('app-allowlist-check', 's');
 $labels = array_column($check, 'label');
 $iList = array_search('check-list', $labels, true);
 $guardSet = $check[$iList - 2]; $guardGoto = $check[$iList - 1];
-check($guardSet['app'] === 'ext_set' && $guardSet['args'] === array('ALCIDOK', '${REGEX("^[+]?[0-9]+$" ${CALLERID(num)})}'), 'A1(a) CID REGEX set right before check-list');
+check($guardSet['app'] === 'ext_set' && $guardSet['args'] === array('ALCIDOK', '${REGEX("^[+]?[0-9]{1,20}$" ${CALLERID(num)})}'), 'A1(a) CID REGEX set right before check-list');
 check($guardGoto['app'] === 'ext_gotoif' && $guardGoto['args'] === array('$["${ALCIDOK}"!="1"]', 'check-contacts'), 'A1(b) non-digit CID goes to check-contacts');
 $add1 = $ctx('app-allowlist-add', '1');
 $iPut = array_search('DB(allowlist/${allownr})', array_map(function ($l) { return $l['args'][0] ?? null; }, $add1), true);
-check($iPut >= 2 && $add1[$iPut - 1]['args'] === array('$["${ALNROK}"!="1"]', 'app-allowlist-add-invalid,s,1') && strpos($add1[$iPut - 2]['args'][1], '${REGEX("^[+]?[0-9]+$" ${allownr})}') !== false, 'A1(d) *38 guards ${allownr} before the DB write');
+check($iPut >= 2 && $add1[$iPut - 1]['args'] === array('$["${ALNROK}"!="1"]', 'app-allowlist-add-invalid,s,1') && strpos($add1[$iPut - 2]['args'][1], '${REGEX("^[+]?[0-9]{1,20}$" ${allownr})}') !== false, 'A1(d) *38 guards ${allownr} before the DB write');
 $lastS = $ctx('app-allowlist-last', 's');
 $hasLastGuard = false;
 foreach ($lastS as $i => $l) {
@@ -145,9 +146,67 @@ check($last1[0]['args'][0] === 'ALCIDOK' && $last1[1]['args'][1] === 's,noinfo' 
 $noBackslash = true;
 foreach ($ext->lines as $l) { foreach ($l['args'] as $a) { if (is_string($a) && strpos($a, 'REGEX') !== false && strpos($a, '\\') !== false) { $noBackslash = false; } } }
 check($noBackslash, 'A1 REGEX arguments contain no backslash');
+$bounded = 0;
+foreach ($ext->lines as $l) { foreach ($l['args'] as $a) { if (is_string($a) && strpos($a, 'REGEX(') !== false) { $bounded += strpos($a, '^[+]?[0-9]{1,20}$') !== false ? 1 : -100; } } }
+check($bounded === 4, 'should-fix (a): all four dialplan REGEX guards cap at 20 digits like PHP/AGI');
 $toggle = $ctx('app-allowlist-pause-toggle', 's');
 $pauseExpr = array_values(array_filter($toggle, function ($l) { return $l['app'] === 'ext_gotoif' && $l['args'][1] === 'paused:unpaused'; }));
 check(count($pauseExpr) === 1 && $pauseExpr[0]['args'][0] === '$[${DB_EXISTS(allowlist/pause)}]', 'A7 pause expression has no stray ]');
+
+
+// ---- Blocker 1: legacy restore keeps settings, validates numbers, reports skips
+list($fp, $al) = fresh();
+$fp->Allowlist = $al;
+$fp->astman->db['/allowlist/2029999999'] = 'pre-restore entry';
+$restore = new \FreePBX\modules\Allowlist\Restore($fp);
+$legacy = array('astdb' => array('allowlist' => array(
+	'dest' => 'tst-blocked,s,1', 'pause' => '1760800000', 'knowncallers' => '1',
+	'did/5550100/' => '1', 'autoadd/3' => '1,1,10',
+	'2025550111' => 'Alice', '+12025550112' => 'Bob', 911 => '1',
+	'sipuser' => 'legacy name', 'pause2' => 'x',
+	"autoadd/4" => "1,0,99\r\nAction: Command", "dest\n" => 'x',
+)));
+$restore->processLegacy(null, $legacy, array(), array());
+$db = $fp->astman->db;
+check(($db['/allowlist/dest'] ?? null) === 'tst-blocked,s,1' && ($db['/allowlist/pause'] ?? null) === '1760800000' && ($db['/allowlist/knowncallers'] ?? null) === '1', 'legacy restore keeps dest, pause, knowncallers');
+check(($db['/allowlist/did/5550100/'] ?? null) === '1' && ($db['/allowlist/autoadd/3'] ?? null) === '1,1,10', 'legacy restore keeps did/ and autoadd/ keys');
+check(($db['/allowlist/2025550111'] ?? null) === 'Alice' && isset($db['/allowlist/+12025550112'], $db['/allowlist/911']), 'legacy restore adds valid numbers via numberAdd');
+check(!isset($db['/allowlist/sipuser']) && !isset($db['/allowlist/pause2']), 'legacy restore skips non-digit entries');
+check(!isset($db['/allowlist/autoadd/4']) && !isset($db["/allowlist/dest\n"]), 'legacy restore rejects settings with CR/LF');
+check(!isset($db['/allowlist/2029999999']), 'legacy restore still clears old data first');
+$logged = implode("\n", array_column($restore->logs, 1));
+check(count($restore->logs) === 4 && strpos($logged, 'sipuser') !== false && strpos($logged, 'pause2') !== false && strpos($logged, 'autoadd/4') !== false, 'legacy restore logs each skipped entry (4)');
+check(strpos($logged, "\r") === false && strpos($logged, 'Action: Command') === false, 'skip log does not echo CR/LF payloads');
+check($restore->featureCodesRestored === true, 'legacy restore still restores feature codes');
+$r = $restore->processLegacy(null, array('astdb' => array()), array(), array());
+check($r === $restore && ($fp->astman->db['/allowlist/dest'] ?? null) === 'tst-blocked,s,1', 'legacy restore without allowlist data changes nothing');
+
+// ---- Blocker 2: bulk import reports rejected rows
+list($fp, $al) = fresh();
+$r = $al->bulkhandlerImport('allowlist', array(
+	array('number' => '2025550130', 'description' => 'ok'),
+	array('number' => 'dest', 'description' => 'evil'),
+	array('number' => '', 'description' => 'blank'),
+	array('number' => '2025550131', 'description' => str_repeat('a', 300)),
+	array('number' => "+12025550132", 'description' => ''),
+));
+check($r['status'] === false && count($r['rejected']) === 3, 'bulk import returns status false with 3 rejected rows');
+check(strpos($r['message'], 'row 2 (dest)') !== false && strpos($r['message'], 'row 3') !== false && strpos($r['message'], 'row 4 (2025550131)') !== false, 'bulk import message names the rejected rows');
+check(isset($fp->astman->db['/allowlist/2025550130'], $fp->astman->db['/allowlist/+12025550132']) && $fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1', 'bulk import adds valid rows, dest untouched');
+$r = $al->bulkhandlerImport('allowlist', array(array('number' => '2025550133', 'description' => 'x')));
+check($r === array('status' => true), 'bulk import of valid rows returns status true');
+$r = $al->bulkhandlerImport('allowlist', array(array('number' => '2025550133', 'description' => 'x'), array('number' => 'pause')), false);
+check($r['status'] === false && count($r['rejected']) === 1, 'bulk import (no replace) skips existing, still reports invalid');
+
+// ---- Should-fix (c): partial bulkdelete
+list($fp, $al) = fresh();
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode(array('2025550113', 'dest', 'sipuser'))));
+check($r['status'] === true && $r['deleted'] === 2 && $r['rejected'] === array('dest') && !empty($r['message']), 'partial bulkdelete: status true (grid refreshes), rejected listed');
+check(!isset($fp->astman->db['/allowlist/2025550113']) && isset($fp->astman->db['/allowlist/dest']), 'partial bulkdelete deleted valid, kept dest');
+
+// ---- Should-fix (b): CLI reports a rejected destination
+$console = file_get_contents($root . '/Console/Allowlist.class.php');
+check(preg_match('/if \(!\$allowlist->destinationSet\(\$destnames\[\$id\]\[2\]\)\) \{\s*\$output->writeln\(.<error>. \. \$allowlist->getLastError\(\)/', $console) === 1, 'CLI checks destinationSet() and prints the error');
 
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);
