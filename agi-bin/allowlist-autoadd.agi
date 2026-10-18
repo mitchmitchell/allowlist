@@ -61,6 +61,16 @@ $dial_number = substr($dial_number,$digit_remcount,$digit_stocount);
 
 $AGI->verbose("searching for final \"$dial_number\" in asterisk database");
 
+// Only digit numbers (optional leading +) may be written to the shared allowlist family.
+if (strlen($dial_number) != 0) {
+	$valid_number = allowlistNormalizeNumber($dial_number);
+	if ($valid_number === false) {
+		$AGI->verbose("\"$dial_number\" is not a valid allowlist number (digits, optional leading +), not autoadding");
+		exit;
+	}
+	$dial_number = $valid_number;
+}
+
 if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) && (strlen($dial_number) != 0)) { // dialed number is not part of any of the allowed numbers so add it if it is not empty
 	$AGI->verbose("adding number to allowlist");
 	$done = $AGI->database_put('allowlist',$dial_number,'automatically added');

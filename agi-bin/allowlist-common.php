@@ -1,6 +1,26 @@
 <?php
 // helper functions
 
+/**
+ * Mirror of \FreePBX\modules\Allowlist::normalizeNumber() for AGI scripts, which
+ * run without the module class. Keep the two in step; tests/unit checks they agree.
+ * Digits only, optional leading +, 1-20 digits; settings keys are never valid.
+ * @return string|false Trimmed number, or false
+ */
+function allowlistNormalizeNumber($n) {
+	if (!is_string($n)) {
+		return false;
+	}
+	$n = trim($n);
+	if (!preg_match('/^\+?[0-9]{1,20}$/D', $n)) {
+		return false;
+	}
+	if (in_array($n, array('dest', 'pause', 'knowncallers'), true) || strpos($n, 'did/') === 0 || strpos($n, 'autoadd/') === 0) {
+		return false;
+	}
+	return $n;
+}
+
 function searchAllowList ($number) {
 	global $AGI;
 	$found = false;

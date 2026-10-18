@@ -6,6 +6,7 @@ use GraphQLRelay\Relay;
 use GraphQL\Type\Definition\Type;
 use FreePBX\modules\Api\Gql\Base;
 use GraphQL\Type\Definition\ObjectType;
+use GraphQL\Error\UserError;
 
 class Allowlist extends Base {
 	protected $module = 'allowlist';
@@ -34,10 +35,15 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$this->freepbx->Allowlist->numberAdd($input);
-							$list = $this->freepbx->Allowlist->getAllowlist();
-							$item = array_search($input['number'], array_column($list, 'number'));
-							return isset($list[$item]) ? $list[$item] : null;
+							$allowlist = $this->freepbx->Allowlist;
+							$entry = $allowlist->checkEntry([
+								'number' => isset($input['number']) ? $input['number'] : null,
+								'description' => isset($input['description']) ? $input['description'] : null,
+							]);
+							if (!$entry || !$allowlist->numberAdd($entry)) {
+								throw new UserError($allowlist->getLastError());
+							}
+							return $allowlist->findNumber($entry['number']);
 						}
 					]),
 					'removeAllowlist' => Relay::mutationWithClientMutationId([
@@ -57,7 +63,10 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$this->freepbx->Allowlist->numberDel($input['number']);
+							$allowlist = $this->freepbx->Allowlist;
+							if (!$allowlist->numberDel(isset($input['number']) ? $input['number'] : null)) {
+								throw new UserError($allowlist->getLastError());
+							}
 							return ['id' => $input['number']];
 						}
 					])
@@ -87,9 +96,10 @@ class Allowlist extends Base {
 							]
 						],
 						'resolve' => function($root, $args) {
-							$list = $this->freepbx->Allowlist->getAllowlist();
-							$item = array_search(Relay::fromGlobalId($args['id'])['id'], array_column($list, 'number'));
-							return isset($list[$item]) ? $list[$item] : null;
+							if (!isset($args['id'])) {
+								return null;
+							}
+							return $this->freepbx->Allowlist->findNumber(Relay::fromGlobalId($args['id'])['id']);
 						}
 					],
 					'allowlistSettings' => [
@@ -134,9 +144,7 @@ class Allowlist extends Base {
 		});
 
 		$user->setGetNodeCallback(function($id) {
-			$list = $this->freepbx->Allowlist->getAllowlist();
-			$item = array_search($id, array_column($list, 'number'));
-			return isset($list[$item]) ? $list[$item] : null;
+			return $this->freepbx->Allowlist->findNumber($id);
 		});
 
 		$user->addFieldCallback(function() {

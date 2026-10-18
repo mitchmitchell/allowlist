@@ -1,0 +1,20 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [release/17.0]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: |
+          php -v | head -1
+          git ls-files '*.php' '*.agi' | xargs -n1 php -l
+      - name: PHP unit tests (no FreePBX needed)
+        run: php tests/unit/run.php
+      - name: JS unit tests
+        run: node tests/unit/algrid.test.js

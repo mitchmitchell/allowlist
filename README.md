@@ -12,6 +12,11 @@ allowlist
 This is a module for [FreePBX©](http://www.freepbx.org/ "FreePBX Home Page"). [FreePBX](http://www.freepbx.org/ "FreePBX Home Page") is an open source GUI (graphical user interface) that controls and manages [Asterisk©](http://www.asterisk.org/ "Asterisk Home Page") (PBX). FreePBX is licensed under GPL.
 [FreePBX](http://www.freepbx.org/ "FreePBX Home Page") is a completely modular GUI for Asterisk written in PHP and Javascript. Meaning you can easily write any module you can think of and distribute it free of cost to your clients so that they can take advantage of beneficial features in [Asterisk](http://www.asterisk.org/ "Asterisk Home Page")
 
+### Requirements and security notes
+- FreePBX 17 (core 17.0.1 or later).
+- **FreePBX framework 17.0.33 or later is recommended.** It sanitizes CR/LF in Asterisk Manager requests (FREEI-3044). This module already rejects numbers and descriptions containing control characters, so this is defense in depth; the module does not require it.
+- Allowlist numbers are digits only, with an optional leading `+` (up to 20 digits). Caller IDs that are not in that form are never matched against the allowlist; they still go through the Contact Manager / phonebook check when "Allow Phonebook and CM Callers" is on. Existing non-numeric entries (for example SIP usernames) no longer let a caller through and can be deleted.
+
 ### Setting up a FreePBX system
 [See our WIKI](http://wiki.freepbx.org/display/FOP/Install+FreePBX)
 ### License
