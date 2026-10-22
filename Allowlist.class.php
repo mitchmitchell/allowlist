@@ -878,7 +878,11 @@ class Allowlist implements BMO
         if ($this->astman->connected())
         {
             $description = $entry['description'] === '' ? '1' : $entry['description'];
-            $this->astman->database_put('allowlist', $entry['number'], htmlentities($description, ENT_COMPAT | ENT_HTML401, "UTF-8"));
+            if (!$this->astman->database_put('allowlist', $entry['number'], htmlentities($description, ENT_COMPAT | ENT_HTML401, "UTF-8")))
+            {
+                $this->lastError = _('Could not save the number: the Asterisk database rejected the write.');
+                return false;
+            }
         }
         else
         {
@@ -925,7 +929,12 @@ class Allowlist implements BMO
                 $this->lastError = _('Not an allowlist number.');
                 return false;
             }
-            return ($this->astman->database_del('allowlist', $number));
+            if (!$this->astman->database_del('allowlist', $number))
+            {
+                $this->lastError = _('Could not delete the number: the Asterisk database rejected the delete.');
+                return false;
+            }
+            return true;
         }
         else
         {

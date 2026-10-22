@@ -23,10 +23,12 @@ namespace {
 	}
 	class FakeAstman {
 		public $db = array();
+		public $failPut = false;
+		public $failDel = false;
 		public function connected() { return true; }
-		public function database_put($fam, $key, $val) { $this->db["/$fam/$key"] = (string)$val; return true; }
+		public function database_put($fam, $key, $val) { if ($this->failPut) { return false; } $this->db["/$fam/$key"] = (string)$val; return true; }
 		public function database_get($fam, $key) { return isset($this->db["/$fam/$key"]) ? $this->db["/$fam/$key"] : false; }
-		public function database_del($fam, $key) { $had = isset($this->db["/$fam/$key"]); unset($this->db["/$fam/$key"]); return $had; }
+		public function database_del($fam, $key) { if ($this->failDel) { return false; } $had = isset($this->db["/$fam/$key"]); unset($this->db["/$fam/$key"]); return $had; }
 		public function database_deltree($fam) { foreach (array_keys($this->db) as $k) { if (strpos($k, "/$fam/") === 0) { unset($this->db[$k]); } } return true; }
 		public function database_show($fam) {
 			$out = array();

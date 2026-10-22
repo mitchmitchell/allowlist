@@ -371,5 +371,17 @@ check($al->didAdd('5550101', '') === true && isset($fp->astman->db['/allowlist/d
 check($al->didAdd('', '') === true && $al->didAdd('_X.', '') === true, 'didAdd keeps any-DID and pattern routes');
 check($al->didAdd('555"0', '') === false && $al->didAdd('555', 'a/b') === false, 'didAdd rejects quotes and slashes');
 
+// --- AstDB write/delete failures surface ----------------------------------------
+list($fp, $al) = fresh();
+$fp->astman->failPut = true;
+$before = $fp->astman->db;
+check($al->numberAdd(array('number' => '2025550199', 'description' => 'x')) === false, 'numberAdd returns false when database_put fails');
+check($al->getLastError() !== '' && $fp->astman->db === $before, 'failed put sets lastError and stores nothing');
+$fp->astman->failPut = false;
+check($al->numberAdd(array('number' => '2025550199')) === true, 'numberAdd succeeds once put works');
+$fp->astman->failDel = true;
+check($al->numberDel('2025550199') === false && $al->getLastError() !== '', 'numberDel returns false with a message when database_del fails');
+$fp->astman->failDel = false;
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

@@ -20,10 +20,12 @@ class Allowlist extends Base {
 						'description' => _('Add a new number to the allowlist'),
 						'inputFields' => [
 							'number' => [
-								'type' => Type::nonNull(Type::string())
+								'type' => Type::nonNull(Type::string()),
+								'description' => _('Number to allow: digits only, optional leading +, up to 20 digits')
 							],
 							'description' => [
-								'type' => Type::string()
+								'type' => Type::string(),
+								'description' => _('Optional label for the number')
 							]
 						],
 						'outputFields' => [
@@ -51,7 +53,8 @@ class Allowlist extends Base {
 						'description' => _('Remove a number from the allowlist'),
 						'inputFields' => [
 							'number' => [
-								'type' => Type::nonNull(Type::string())
+								'type' => Type::nonNull(Type::string()),
+								'description' => _('Number to remove from the allowlist')
 							]
 						],
 						'outputFields' => [
