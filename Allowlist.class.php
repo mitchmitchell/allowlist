@@ -249,7 +249,14 @@ class Allowlist implements BMO
                 {
                     return array('status' => false, 'message' => $this->lastError);
                 }
-                $old = self::normalizeNumber(isset($request['oldval']) ? $request['oldval'] : null);
+                $rawOld = isset($request['oldval']) && is_string($request['oldval']) ? $request['oldval'] : null;
+                $old = self::normalizeNumber($rawOld);
+                if ($old === false && $rawOld !== null && $this->isDeletableNumber($rawOld))
+                {
+                    // D1: a legacy non-numeric entry edited to a valid number is
+                    // removed once the new number is saved.
+                    $old = $rawOld;
+                }
                 if ($old !== false && $old !== $entry['number'] && !$this->numberDel($old))
                 {
                     return array('status' => false, 'message' => $this->lastError);

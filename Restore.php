@@ -113,6 +113,10 @@ class Restore Extends Base\RestoreBase{
 			$digits = \FreePBX\modules\Allowlist::normalizeNumber($key);
 			$len = strlen($digits);
 			$key = $len <= 4 ? str_repeat('*', $len) : str_repeat('*', $len - 4) . substr($digits, -4);
+		} elseif(strpos($key, 'did/') === 0){
+			// did/<DID>/<CID> keys hold DID and caller-ID numbers: keep only the
+			// last 4 digits of each digit run.
+			$key = preg_replace_callback('/\d{5,}/', function($m){ return str_repeat('*', strlen($m[0]) - 4) . substr($m[0], -4); }, $key);
 		}
 		$key = mb_substr(preg_replace('/[\x00-\x1F\x7F]/', '?', $key), 0, 40, 'UTF-8');
 		return htmlspecialchars($key . ': ' . $reason, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

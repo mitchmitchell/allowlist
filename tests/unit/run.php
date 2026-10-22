@@ -457,5 +457,26 @@ check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,10', 'editroute with vali
 allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '1', 'autoadd_allowlist' => 'no'));
 check(!isset($fp->astman->db['/allowlist/autoadd/1']), 'editroute with auto-add turned off removes the setting');
 
+// --- Restore skip-log masks did/<DID>/<CID> keys ------------------------------
+list($fp, $al) = fresh();
+$fp->Allowlist = $al;
+$restore = new \FreePBX\modules\Allowlist\Restore($fp);
+$restore->restoreAllowlistEntries(array('did/15551230000/15559870000' => "bad\nvalue"));
+$logged = implode("\n", array_column($restore->logs, 1));
+check(strpos($logged, 'did/') !== false && substr_count($logged, '*******0000') === 2 && !preg_match('/\d{5,}/', $logged), 'restore skip-log masks did/<DID>/<CID> keys to the last 4 digits of each number');
+
+// --- D1: editing a legacy non-numeric entry to a valid number removes it -------
+list($fp, $al) = fresh();
+$fp->astman->failPut = true;
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'sipuser', 'number' => '2025550120', 'description' => 'x'));
+$fp->astman->failPut = false;
+check($r['status'] === false && $fp->astman->db['/allowlist/sipuser'] === 'legacy', 'legacy edit whose write fails keeps the legacy entry');
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'sipuser', 'number' => 'not-a-number', 'description' => 'x'));
+check($r['status'] === false && $fp->astman->db['/allowlist/sipuser'] === 'legacy', 'legacy edit to an invalid number keeps the legacy entry');
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'sipuser', 'number' => '2025550120', 'description' => 'x'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/sipuser']) && isset($fp->astman->db['/allowlist/2025550120']), 'legacy edit to a valid number saves it, then removes the legacy key');
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'dest', 'number' => '2025550121', 'description' => 'x'));
+check(isset($fp->astman->db['/allowlist/dest']), 'edit never removes a settings key named as oldval');
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);
