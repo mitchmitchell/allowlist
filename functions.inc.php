@@ -123,7 +123,9 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
                 $invalidDIDChars = array('<', '>');
                 $extension = trim(str_replace($invalidDIDChars, "", $request['extension']));
                 $cidnum = trim(str_replace($invalidDIDChars, "", $request['cidnum']));
-                $allowlist->didAdd($extension, $cidnum);
+                if (!$allowlist->didAdd($extension, $cidnum)) {
+                    $allowlist->reportHookRejection(_('inbound route'));
+                }
             }
             break;
         case 'delIncoming':
@@ -141,12 +143,16 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
                 $allowlist->didDelete($extarray[0], $extarray[1]);
             }
             if ($request['enable_allowlist'] == 'yes') {
-                $allowlist->didAdd($extension, $cidnum);
+                if (!$allowlist->didAdd($extension, $cidnum)) {
+                    $allowlist->reportHookRejection(_('inbound route'));
+                }
             }
             break;
         case 'addroute':
             if ($request['autoadd_allowlist'] == 'yes') {
-                $allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount']);
+                if (!$allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount'])) {
+                    $allowlist->reportHookRejection(_('outbound route auto-add'));
+                }
             }
             break;
         case 'delroute':
@@ -155,7 +161,9 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
         case 'editroute':                 // deleting and adding as in core module - ensures changes are updated for the route
             $allowlist->routeDelete($request['id']);
             if ($request['autoadd_allowlist'] == 'yes') {
-                $allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount']);
+                if (!$allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount'])) {
+                    $allowlist->reportHookRejection(_('outbound route auto-add'));
+                }
             }
             break;
         }

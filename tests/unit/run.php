@@ -383,5 +383,28 @@ $fp->astman->failDel = true;
 check($al->numberDel('2025550199') === false && $al->getLastError() !== '', 'numberDel returns false with a message when database_del fails');
 $fp->astman->failDel = false;
 
+// --- N1: rejected route-hook settings reach the admin ------------------------
+class FakeNotifications { public $warnings = array(); public function add_warning(...$a) { $this->warnings[] = $a; return true; } }
+list($fp, $al) = fresh();
+$fp->Notifications = new FakeNotifications();
+check($al->didAdd('55/01', '') === false, 'didAdd rejects a bad DID');
+$msg = $al->reportHookRejection('inbound route');
+check(count($fp->Notifications->warnings) === 1 && $fp->Notifications->warnings[0][0] === 'allowlist' && strpos($fp->Notifications->warnings[0][3], $al->getLastError()) !== false, 'rejected didAdd raises an admin notification with the reason');
+check(strpos($msg, '55') === false, 'hook notification never contains the DID');
+list($fp, $al) = fresh();
+check($al->routeAdd('1', '0', '0') === false && is_string($al->reportHookRejection('outbound route auto-add')), 'reporting works without a Notifications module');
+$fn = file_get_contents($root . '/functions.inc.php');
+check(preg_match_all('/if \(!\$allowlist->(didAdd|routeAdd)\(/', $fn) === 4 && preg_match_all('/^\s*\$allowlist->(didAdd|routeAdd)\(/m', $fn) === 0, 'every didAdd/routeAdd hook call checks the result');
+
+// --- N2: restore skip-log masks number keys -----------------------------------
+list($fp, $al) = fresh();
+$fp->Allowlist = $al;
+$restore = new \FreePBX\modules\Allowlist\Restore($fp);
+$restore->restoreAllowlistEntries(array('2025550188' => str_repeat('a', 300)));
+$logged = implode("\n", array_column($restore->logs, 1));
+check(strpos($logged, '2025550188') === false && strpos($logged, '******0188') !== false, 'restore skip-log masks a number key to its last 4 digits');
+$restore->restoreAllowlistEntries(array('dest' => 'bogus-ctx,s,1'));
+check(strpos(implode("\n", array_column($restore->logs, 1)), 'dest:') !== false, 'restore skip-log keeps setting names readable');
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

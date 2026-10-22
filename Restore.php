@@ -107,6 +107,13 @@ class Restore Extends Base\RestoreBase{
 
 	private function describeSkipped($key, $reason){
 		// Masked, truncated and HTML-escaped: restore logs can be shown in the web UI.
+		$key = is_scalar($key) ? (string)$key : '';
+		// N2: a key that is a phone number is masked to its last 4 digits.
+		if(\FreePBX\modules\Allowlist::normalizeNumber($key) !== false){
+			$digits = \FreePBX\modules\Allowlist::normalizeNumber($key);
+			$len = strlen($digits);
+			$key = $len <= 4 ? str_repeat('*', $len) : str_repeat('*', $len - 4) . substr($digits, -4);
+		}
 		$key = mb_substr(preg_replace('/[\x00-\x1F\x7F]/', '?', $key), 0, 40, 'UTF-8');
 		return htmlspecialchars($key . ': ' . $reason, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 	}

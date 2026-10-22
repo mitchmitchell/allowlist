@@ -1106,6 +1106,34 @@ class Allowlist implements BMO
         return is_string($v) && $v !== '';
     }
 
+    /**
+     * N1: the core route hooks have no return channel, so a rejected didAdd/routeAdd
+     * would be dropped silently. Raise a FreePBX notification with the reason (the
+     * reason is fixed text and never contains a number). Returns the message shown.
+     */
+    public function reportHookRejection($what)
+    {
+        $msg = sprintf(_('Allowlist did not save the %s setting: %s'), $what, $this->lastError);
+        $this->auditLog('Allowlist: ' . $what . ' setting rejected and reported to the admin');
+        $notify = null;
+        if (property_exists($this->FreePBX, 'Notifications') || method_exists($this->FreePBX, '__get'))
+        {
+            try
+            {
+                $notify = $this->FreePBX->Notifications;
+            }
+            catch (\Throwable $e)
+            {
+                $notify = null;
+            }
+        }
+        if (is_object($notify) && method_exists($notify, 'add_warning'))
+        {
+            $notify->add_warning('allowlist', 'HOOKREJECT', _('Allowlist setting not saved'), $msg, '', true, true);
+        }
+        return $msg;
+    }
+
     /** Audit trail for security-relevant changes. Messages never contain numbers or PINs. */
     public function auditLog($msg)
     {
