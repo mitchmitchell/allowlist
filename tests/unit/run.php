@@ -406,5 +406,56 @@ check(strpos($logged, '2025550188') === false && strpos($logged, '******0188') !
 $restore->restoreAllowlistEntries(array('dest' => 'bogus-ctx,s,1'));
 check(strpos(implode("\n", array_column($restore->logs, 1)), 'dest:') !== false, 'restore skip-log keeps setting names readable');
 
+// --- Edit paths: validate, write the new entry, then remove the old one -------
+// UI number edit
+list($fp, $al) = fresh();
+$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550113', 'number' => '20255501x3', 'description' => 'new'));
+check($r['status'] === false && $fp->astman->db['/allowlist/2025550113'] === 'old entry', 'edit with an invalid new number keeps the old entry');
+$fp->astman->failPut = true;
+$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failPut = false;
+check($r['status'] === false && $r['message'] !== '' && $fp->astman->db['/allowlist/2025550113'] === 'old entry' && !isset($fp->astman->db['/allowlist/2025550114']), 'edit whose write fails keeps the old entry and returns an error');
+$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/2025550113']) && $fp->astman->db['/allowlist/2025550114'] === 'new', 'edit to a new number writes it, then removes the old one');
+$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550114', 'number' => '2025550114', 'description' => 'renamed'));
+check($r['status'] === true && $fp->astman->db['/allowlist/2025550114'] === 'renamed', 'edit of the description only keeps the entry');
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550114', 'number' => '2025550115', 'description' => 'x'));
+$fp->astman->failDel = false;
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550115']) && isset($fp->astman->db['/allowlist/2025550114']), 'edit whose old-entry delete fails reports it and loses nothing');
+
+// Route hooks (core module edit paths)
+if (!defined('FREEPBX_IS_AUTH')) { define('FREEPBX_IS_AUTH', true); }
+if (!class_exists('FreePBX')) { eval('class FreePBX { public static $al; public static function Allowlist() { return self::$al; } }'); }
+require_once $root . '/functions.inc.php';
+list($fp, $al) = fresh();
+$fp->Notifications = new FakeNotifications();
+FreePBX::$al = $al;
+unset($fp->astman->db['/allowlist/did/5550100/']);
+$fp->astman->db['/allowlist/did/5550100'] = '1'; // the key didAdd/didDelete use for a route with no CID
+$base = array('action' => 'edtIncoming', 'extdisplay' => '5550100/', 'enable_allowlist' => 'yes', 'cidnum' => '');
+allowlist_hookProcess_core(null, $base + array('extension' => '555"0100'));
+check(isset($fp->astman->db['/allowlist/did/5550100']), 'edtIncoming with an invalid DID keeps the old setting');
+check(count($fp->Notifications->warnings) === 1, 'edtIncoming with an invalid DID reports one error');
+$fp->astman->failPut = true;
+allowlist_hookProcess_core(null, $base + array('extension' => '5550102'));
+$fp->astman->failPut = false;
+check(isset($fp->astman->db['/allowlist/did/5550100']) && !isset($fp->astman->db['/allowlist/did/5550102']) && count($fp->Notifications->warnings) === 2, 'edtIncoming whose write fails keeps the old setting and reports it');
+allowlist_hookProcess_core(null, $base + array('extension' => '5550102'));
+check(!isset($fp->astman->db['/allowlist/did/5550100']) && isset($fp->astman->db['/allowlist/did/5550102']) && count($fp->Notifications->warnings) === 2, 'edtIncoming with a valid DID writes the new setting, then removes the old one');
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550102/', 'enable_allowlist' => 'no', 'extension' => '5550102', 'cidnum' => ''));
+check(!isset($fp->astman->db['/allowlist/did/5550102']), 'edtIncoming with allowlist turned off removes the setting');
+$rt = array('action' => 'editroute', 'id' => '1', 'autoadd_allowlist' => 'yes', 'remcount' => '0');
+allowlist_hookProcess_core(null, $rt + array('stocount' => '3'));
+check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,99' && count($fp->Notifications->warnings) === 3, 'editroute with an invalid count keeps the old auto-add setting and reports it');
+$fp->astman->failPut = true;
+allowlist_hookProcess_core(null, $rt + array('stocount' => '10'));
+$fp->astman->failPut = false;
+check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,99' && count($fp->Notifications->warnings) === 4, 'editroute whose write fails keeps the old setting and reports it');
+allowlist_hookProcess_core(null, $rt + array('stocount' => '10'));
+check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,10', 'editroute with valid counts updates the setting');
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '1', 'autoadd_allowlist' => 'no'));
+check(!isset($fp->astman->db['/allowlist/autoadd/1']), 'editroute with auto-add turned off removes the setting');
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

@@ -242,13 +242,15 @@ class Allowlist implements BMO
                 );
             break;
             case 'edit':
-                // Validate the new entry before touching the old one.
-                if (!$this->checkEntry($request))
+                // Validate, write the new entry, and only then remove the old one,
+                // so a rejected value or a failed write never loses the old entry.
+                $entry = $this->checkEntry($request);
+                if (!$entry || !$this->numberAdd($request))
                 {
                     return array('status' => false, 'message' => $this->lastError);
                 }
-                $this->numberDel(isset($request['oldval']) ? $request['oldval'] : null);
-                if (!$this->numberAdd($request))
+                $old = self::normalizeNumber(isset($request['oldval']) ? $request['oldval'] : null);
+                if ($old !== false && $old !== $entry['number'] && !$this->numberDel($old))
                 {
                     return array('status' => false, 'message' => $this->lastError);
                 }
@@ -1328,7 +1330,11 @@ class Allowlist implements BMO
         {
             // Add in did/cid pair
             $exten = $did . ($cid == "" ? "" : '/' . $cid);
-            $this->astman->database_put('allowlist', 'did/' . $exten, true);
+            if (!$this->astman->database_put('allowlist', 'did/' . $exten, true))
+            {
+                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+                return false;
+            }
             return true;
         }
         else
@@ -1384,7 +1390,11 @@ class Allowlist implements BMO
         }
         if ($this->astman->connected())
         {
-            $this->astman->database_put('allowlist', 'autoadd/' . (int)$id, '1,' . (int)$ld . ',' . (int)$sd);
+            if (!$this->astman->database_put('allowlist', 'autoadd/' . (int)$id, '1,' . (int)$ld . ',' . (int)$sd))
+            {
+                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+                return false;
+            }
             return true;
         }
         else

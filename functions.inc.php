@@ -139,13 +139,19 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
             $invalidDIDChars = array('<', '>');
             $extension = trim(str_replace($invalidDIDChars, "", $request['extension']));
             $cidnum = trim(str_replace($invalidDIDChars, "", $request['cidnum']));
-            if (count($extarray) == 2) {
-                $allowlist->didDelete($extarray[0], $extarray[1]);
-            }
+            // Validate and write the new setting first; remove the old one only
+            // after that succeeds, so a rejected value never drops the route's setting.
+            $old = count($extarray) == 2 ? $extarray : null;
             if ($request['enable_allowlist'] == 'yes') {
                 if (!$allowlist->didAdd($extension, $cidnum)) {
                     $allowlist->reportHookRejection(_('inbound route'));
+                    break;
                 }
+                if ($old !== null && ($old[0] !== $extension || $old[1] !== $cidnum)) {
+                    $allowlist->didDelete($old[0], $old[1]);
+                }
+            } elseif ($old !== null) {
+                $allowlist->didDelete($old[0], $old[1]);
             }
             break;
         case 'addroute':
@@ -159,11 +165,14 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
             $allowlist->routeDelete($request['id']);
             break;
         case 'editroute':                 // deleting and adding as in core module - ensures changes are updated for the route
-            $allowlist->routeDelete($request['id']);
+            // routeAdd overwrites the same key, so only delete when auto-add is
+            // turned off; a rejected value leaves the existing setting in place.
             if ($request['autoadd_allowlist'] == 'yes') {
                 if (!$allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount'])) {
                     $allowlist->reportHookRejection(_('outbound route auto-add'));
                 }
+            } else {
+                $allowlist->routeDelete($request['id']);
             }
             break;
         }
