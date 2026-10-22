@@ -1,3 +1,8 @@
+/* M3: anti-CSRF token rendered by the settings page; sent with every state change. */
+function allowlistCsrfToken() {
+	return $('#allowlist_csrf').val() || '';
+}
+
 $('#addNumber').on('show.bs.modal', function (e) {
 	var number = $(e.relatedTarget).data('number');
 	var description = $(e.relatedTarget).data('description');
@@ -45,6 +50,7 @@ $('#submitnumber').on('click',function() {
 	var post_data = {
 		module		: 'allowlist',
 		command		: 'add',
+		token	: allowlistCsrfToken(),
 		action		: "add",
 		oldval		: oldv,
 		number		: num,
@@ -79,6 +85,7 @@ $(document).on('click', '[id^="del"]', function() {
 			var post_data = {
 				module	: 'allowlist',
 				command	: 'del',
+				token	: allowlistCsrfToken(),
 				action	: "delete",
 				number	: num,
 			};
@@ -105,6 +112,7 @@ $(document).on('click', '[id^="block"]', function() {
 			var post_data = {
 				module		: 'allowlist',
 				command		: 'block',
+				token	: allowlistCsrfToken(),
 				action		: "block",
 				number		: num,
 				description : des,
@@ -173,6 +181,7 @@ $("#blkDelete").on("click", function(e) {
 				var post_data = {
 					module	: 'allowlist',
 					command	: 'bulkdelete',
+					token	: allowlistCsrfToken(),
 					numbers	: JSON.stringify(numbers),
 				};
 				$.post(window.FreePBX.ajaxurl, post_data)

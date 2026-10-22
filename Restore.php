@@ -38,7 +38,7 @@ class Restore Extends Base\RestoreBase{
 		$skipped = [];
 		foreach($entries as $key => $value){
 			$key = (string)$key;
-			$isSetting = in_array($key, ['dest', 'pause', 'knowncallers', 'pausepin'], true) || strpos($key, 'did/') === 0 || strpos($key, 'autoadd/') === 0;
+			$isSetting = in_array($key, ['dest', 'pause', 'knowncallers', 'pausepin', 'debuglog'], true) || strpos($key, 'did/') === 0 || strpos($key, 'autoadd/') === 0;
 			if($isSetting){
 				if(!is_scalar($value) || preg_match('/[\r\n\x00]/', $key . (string)$value)){
 					$skipped[] = $this->describeSkipped($key, _('setting contains CR, LF or NUL'));
@@ -89,6 +89,9 @@ class Restore Extends Base\RestoreBase{
 				return _('pause must be a time no more than 24 hours ahead');
 			}
 			return null;
+		}
+		if($key === 'debuglog'){
+			return in_array($value, ['', '0', '1'], true) ? null : _('debuglog must be 0 or 1');
 		}
 		if($key === 'knowncallers'){
 			return in_array($value, ['', '0', '1'], true) ? null : _('knowncallers must be 0 or 1');

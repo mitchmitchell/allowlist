@@ -11,7 +11,13 @@ use RuntimeException;
 class Allowlist implements BMO
 {
     /** Settings keys that share the allowlist AstDB family (never valid numbers). */
-    const RESERVED_KEYS = array('dest', 'pause', 'knowncallers', 'pausepin');
+    const RESERVED_KEYS = array('dest', 'pause', 'knowncallers', 'pausepin', 'debuglog');
+    /** L2: most numbers one bulk delete may name. */
+    const BULK_MAX = 1000;
+    /** L8: shortest stored-number length the auto-add route may keep. */
+    const AUTOADD_MIN_STOCOUNT = 7;
+    /** Commands that change state: a valid CSRF token is required (M3). */
+    const CSRF_COMMANDS = array('add', 'edit', 'del', 'block', 'pause', 'bulkdelete');
     /** Longest pause any path may set (seconds). */
     const PAUSE_MAX_SECS = 86400;
     const RESERVED_PREFIXES = array('did/', 'autoadd/');
@@ -113,13 +119,13 @@ class Allowlist implements BMO
      * number list (never a settings key) and hold no '/', whitespace, quote, backslash
      * or control character. Legacy non-numeric entries stay deletable.
      */
-    public function isDeletableNumber($number)
+    public function isDeletableNumber($number, $list = null)
     {
         if (!is_string($number) || $number === '' || preg_match('#[/\s"\'\\\\\x00-\x1F\x7F]#', $number))
         {
             return false;
         }
-        return self::findInList($this->getAllowlist(), $number) !== null;
+        return self::findInList(is_array($list) ? $list : $this->getAllowlist(), $number) !== null;
     }
 
     /**
@@ -181,9 +187,45 @@ class Allowlist implements BMO
         return false;
     }
 
+    /**
+     * M3: per-session anti-CSRF token for this module's state-changing requests.
+     * Defence in depth: it does not rely on whether the framework checks one.
+     */
+    public function csrfToken()
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent())
+        {
+            @session_start();
+        }
+        if (!isset($_SESSION) || !is_array($_SESSION))
+        {
+            $_SESSION = array();
+        }
+        if (empty($_SESSION['allowlist_csrf']) || !is_string($_SESSION['allowlist_csrf']))
+        {
+            $_SESSION['allowlist_csrf'] = bin2hex(random_bytes(32));
+        }
+        return $_SESSION['allowlist_csrf'];
+    }
+
+    public function csrfValid($token)
+    {
+        $expected = isset($_SESSION['allowlist_csrf']) ? $_SESSION['allowlist_csrf'] : '';
+        return is_string($expected) && $expected !== '' && is_string($token) && hash_equals($expected, $token);
+    }
+
     public function ajaxHandler()
     {
         $request = $_REQUEST;
+        $command = isset($_REQUEST['command']) ? $_REQUEST['command'] : '';
+        if ($command === 'add' && !empty($_REQUEST['oldval']))
+        {
+            $command = 'edit';
+        }
+        if (in_array($command, self::CSRF_COMMANDS, true) && !$this->csrfValid(isset($_REQUEST['token']) ? $_REQUEST['token'] : null))
+        {
+            return array('status' => false, 'message' => _('Your session has expired or the request was not sent from this page; reload and try again.'));
+        }
         if (!empty($_REQUEST['oldval']) && $_REQUEST['command'] == 'add')
         {
             $_REQUEST['command'] = 'edit';
@@ -217,15 +259,16 @@ class Allowlist implements BMO
             case 'bulkdelete':
                 $numbers = isset($_REQUEST['numbers']) ? $_REQUEST['numbers'] : '[]';
                 $numbers = is_string($numbers) ? json_decode($numbers, true) : null;
-                if (!is_array($numbers))
+                if (!is_array($numbers) || count($numbers) > self::BULK_MAX)
                 {
                     return array('status' => false, 'message' => _('Invalid request'));
                 }
                 $rejected = array();
                 $deleted = 0;
+                $list = $this->getAllowlist(); // L2: one AMI listing per request
                 foreach ($numbers as $number)
                 {
-                    if ($this->numberDel($number))
+                    if ($this->numberDel($number, $list))
                     {
                         $deleted++;
                     }
@@ -360,6 +403,12 @@ class Allowlist implements BMO
         isset($request['number']) ? $number = $request['number'] : $number = '';
         isset($request['description']) ? $description = $request['description'] : $description = '';
 
+        if (isset($request['action']) && in_array($action, array('settings', 'import'), true)
+            && !$this->csrfValid(isset($request['token']) ? $request['token'] : null))
+        {
+            echo '<div class="alert alert-danger" role="alert">' . _('Your session has expired or the request was not sent from this page; nothing was changed.') . '</div>';
+            return;
+        }
         if (isset($request['action']))
         {
             switch ($action)
@@ -384,45 +433,10 @@ class Allowlist implements BMO
                     }
                 break;
                 case 'import':
-                    if ($_FILES['file']['error'] > 0)
-                    {
-                        echo '<div class="alert alert-danger" role="alert">' . _('There was an error uploading the file') . '</div>';
-                    }
-                    else
-                    {
-                        if (pathinfo($_FILES['allowlistfile']['name'], PATHINFO_EXTENSION) == 'csv')
-                        {
-                            $path = sys_get_temp_dir() . '/' . $_FILES['allowlistfile']['name'];
-                            move_uploaded_file($_FILES['allowlistfile']['tmp_name'], $path);
-                            if (file_exists($path))
-                            {
-                                ini_set('auto_detect_line_endings', true);
-                                $handle = fopen($path, 'r');
-                                set_time_limit(0);
-                                while (($data = fgetcsv($handle)) !== false)
-                                {
-                                    if ($data[0] == 'number' && $data[1] == 'description')
-                                    {
-                                        continue;
-                                    }
-                                    allowlist_add(array(
-                                        'number' => $data[0],
-                                        'description' => $data[1]
-                                    ));
-                                }
-                                unlink($path);
-                                echo '<div class="alert alert-success" role="alert">' . _('Sucessfully imported all entries') . '</div>';
-                            }
-                            else
-                            {
-                                echo '<div class="alert alert-danger" role="alert">' . _('Could not find file after upload') . '</div>';
-                            }
-                        }
-                        else
-                        {
-                            echo '<div class="alert alert-danger" role="alert">' . _('The file must be in CSV format!') . '</div>';
-                        }
-                    }
+                    // L4: correct upload key, private temp file, honest result.
+                    $up = isset($_FILES['allowlistfile']) && is_array($_FILES['allowlistfile']) ? $_FILES['allowlistfile'] : null;
+                    $msg = $this->importUploadedCsv($up);
+                    echo '<div class="alert alert-' . ($msg['ok'] ? 'success' : 'danger') . '" role="alert">' . htmlspecialchars($msg['message'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</div>';
                 break;
                 case 'export':
                     $list = $this->getAllowlist();
@@ -437,7 +451,7 @@ class Allowlist implements BMO
                         ));
                         foreach ($list as $l)
                         {
-                            fputcsv($output, $l);
+                            fputcsv($output, array_map(array(__CLASS__, 'csvSafeCell'), $l));
                         }
                     }
                     else
@@ -599,6 +613,9 @@ class Allowlist implements BMO
         $ext->add($id, $c, '', new \ext_goto('app-allowlist-add-invalid,s,1'));
 
         $c = '1';
+        // L7: same digits-only guard as the add path before touching AstDB.
+        $ext->add($id, $c, '', new \ext_set('ALNROK', '${REGEX("' . self::DIALPLAN_NUMBER_REGEX . '" ${allownr})}'));
+        $ext->add($id, $c, '', new \ext_gotoif('$["${ALNROK}"!="1"]', 'app-allowlist-add-invalid,s,1'));
         $ext->add($id, $c, '', new \ext_dbdel('allowlist/${allownr}'));
         $ext->add($id, $c, '', new \ext_playback('num-was-successfully&removed'));
         $ext->add($id, $c, '', new \ext_wait(1));
@@ -733,6 +750,57 @@ class Allowlist implements BMO
         return $buttons;
     }
 
+    /** L6: neutralise spreadsheet formulas in exported cells. */
+    public static function csvSafeCell($v)
+    {
+        $s = is_scalar($v) ? (string)$v : '';
+        return ($s !== '' && strpos("=+-@\t\r", $s[0]) !== false) ? "'" . $s : $s;
+    }
+
+    /**
+     * L4: import a legacy CSV upload. Uses the 'allowlistfile' key, a private
+     * tempnam() file, and reports rejected rows instead of claiming success.
+     * @param array|null $up one $_FILES entry
+     * @return array ['ok' => bool, 'message' => string]
+     */
+    public function importUploadedCsv($up, $moveFn = null)
+    {
+        if (!is_array($up) || !isset($up['error'], $up['name'], $up['tmp_name']) || $up['error'] !== UPLOAD_ERR_OK)
+        {
+            return array('ok' => false, 'message' => _('There was an error uploading the file'));
+        }
+        if (strtolower(pathinfo((string)$up['name'], PATHINFO_EXTENSION)) !== 'csv')
+        {
+            return array('ok' => false, 'message' => _('The file must be in CSV format!'));
+        }
+        $path = tempnam(sys_get_temp_dir(), 'allowlist-import-');
+        $moveFn = $moveFn ?: 'move_uploaded_file';
+        if ($path === false || !$moveFn($up['tmp_name'], $path))
+        {
+            if ($path !== false) { @unlink($path); }
+            return array('ok' => false, 'message' => _('Could not find file after upload'));
+        }
+        $added = 0;
+        $rejected = 0;
+        $handle = fopen($path, 'r');
+        while ($handle && ($data = fgetcsv($handle, 0, ',', '"', '\\')) !== false)
+        {
+            if (isset($data[0], $data[1]) && $data[0] === 'number' && $data[1] === 'description')
+            {
+                continue;
+            }
+            $ok = $this->numberAdd(array('number' => isset($data[0]) ? $data[0] : null, 'description' => isset($data[1]) ? $data[1] : null));
+            $ok ? $added++ : $rejected++;
+        }
+        if ($handle) { fclose($handle); }
+        @unlink($path);
+        if ($rejected > 0)
+        {
+            return array('ok' => false, 'message' => sprintf(_('Imported %d entries; %d rows were rejected (invalid number or description).'), $added, $rejected));
+        }
+        return array('ok' => true, 'message' => sprintf(_('Imported %d entries.'), $added));
+    }
+
     //Allowlist Methods
     public function showPage()
     {
@@ -753,7 +821,8 @@ class Allowlist implements BMO
                     'destination' => $destination,
                     'filter_knowncallers' => $filter_knowncallers,
                     'pause' => $pause,
-                    'pausepin_set' => $this->pausePinIsSet()
+                    'pausepin_set' => $this->pausePinIsSet(),
+                    'csrf_token' => $this->csrfToken()
                 ));
         }
     }
@@ -774,7 +843,8 @@ class Allowlist implements BMO
                     '/allowlist/dest',
                     '/allowlist/pause',
                     '/allowlist/knowncallers',
-                    '/allowlist/pausepin'
+                    '/allowlist/pausepin',
+                    '/allowlist/debuglog'
                 );
                 if (in_array($k, $array_continue) || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
                 {
@@ -845,12 +915,12 @@ class Allowlist implements BMO
      * @param  string $number Number to delete
      * @return boolean         Status of deletion
      */
-    public function numberDel($number)
+    public function numberDel($number, $list = null)
     {
         $this->lastError = '';
         if ($this->astman->connected())
         {
-            if (!$this->isDeletableNumber($number))
+            if (!$this->isDeletableNumber($number, $list))
             {
                 $this->lastError = _('Not an allowlist number.');
                 return false;
@@ -879,8 +949,15 @@ class Allowlist implements BMO
                 $this->lastError = _('Not an allowlist number.');
                 return false;
             }
-            $this->FreePBX->Blacklist->numberAdd($post);
-            return ($this->numberDel($post['number']));
+            // L5: hand the Blacklist module only the number and a normalized description.
+            $desc = self::normalizeDescription(isset($post['description']) ? $post['description'] : null);
+            if ($desc === false)
+            {
+                $this->lastError = _('Description must be at most 255 characters with no control characters.');
+                return false;
+            }
+            $this->FreePBX->Blacklist->numberAdd(array('number' => $number, 'description' => $desc));
+            return ($this->numberDel($number));
         }
         else
         {
@@ -1187,13 +1264,35 @@ class Allowlist implements BMO
         return $data;
     }
 
+    /**
+     * L8: DID and CID values allowed in did/ keys. Either may be empty (FreePBX's
+     * any-DID / any-CID route) or use the inbound-route pattern charset (digits, +,
+     * and the X N Z . _ [ ] - pattern characters); never '/', quotes, spaces or
+     * control characters.
+     */
+    public static function validDidCid($did, $cid)
+    {
+        $ok = function ($v) {
+            return $v === null || $v === '' || (is_scalar($v) && preg_match('/^[0-9+XNZxnz._\[\]-]{1,40}$/D', (string)$v) === 1);
+        };
+        return $ok($did) && $ok($cid);
+    }
+
     public function didAdd($did, $cid)
     {
+        $this->lastError = '';
+        if (!self::validDidCid($did, $cid))
+        {
+            $this->lastError = _('DID and caller ID may only contain digits, + and dial-pattern characters.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid DID/CID');
+            return false;
+        }
         if ($this->astman->connected())
         {
             // Add in did/cid pair
             $exten = $did . ($cid == "" ? "" : '/' . $cid);
             $this->astman->database_put('allowlist', 'did/' . $exten, true);
+            return true;
         }
         else
         {
@@ -1238,9 +1337,18 @@ class Allowlist implements BMO
 
     public function routeAdd($id,$ld,$sd)
     {
+        $this->lastError = '';
+        $int = function ($v) { return is_int($v) || (is_string($v) && preg_match('/^[0-9]{1,6}$/D', $v)); };
+        if (!$int($id) || !$int($ld) || !$int($sd) || (int)$sd < self::AUTOADD_MIN_STOCOUNT)
+        {
+            $this->lastError = sprintf(_('Route id and digit counts must be whole numbers; digits to keep must be at least %d.'), self::AUTOADD_MIN_STOCOUNT);
+            $this->auditLog('Allowlist: rejected an outbound-route auto-add setting (invalid counts)');
+            return false;
+        }
         if ($this->astman->connected())
         {
-            $this->astman->database_put('allowlist', 'autoadd/' . $id, "1,$ld,$sd");
+            $this->astman->database_put('allowlist', 'autoadd/' . (int)$id, '1,' . (int)$ld . ',' . (int)$sd);
+            return true;
         }
         else
         {

@@ -27,7 +27,7 @@ function fresh() {
 	);
 	return array($fp, new Allowlist($fp));
 }
-function ajax($al, $req) { $_REQUEST = $req; return $al->ajaxHandler(); }
+function ajax($al, $req) { if (!array_key_exists('token', $req)) { $req['token'] = $al->csrfToken(); } $_REQUEST = $req; return $al->ajaxHandler(); }
 
 // ---- A2(a)/(f), A2(g): number vectors, PHP and AGI mirror agree (SEC-04, SEC-07)
 $valid = array('+12025550111' => '+12025550111', '2025550111' => '2025550111', '911' => '911', "2025550111\n" => '2025550111', ' 911 ' => '911', "911\0" => '911', str_repeat('9', 20) => str_repeat('9', 20));
@@ -148,7 +148,7 @@ foreach ($ext->lines as $l) { foreach ($l['args'] as $a) { if (is_string($a) && 
 check($noBackslash, 'A1 REGEX arguments contain no backslash');
 $bounded = 0;
 foreach ($ext->lines as $l) { foreach ($l['args'] as $a) { if (is_string($a) && strpos($a, 'REGEX(') !== false) { $bounded += strpos($a, '^[+]?[0-9]{1,20}$') !== false ? 1 : -100; } } }
-check($bounded === 4, 'should-fix (a): all four dialplan REGEX guards cap at 20 digits like PHP/AGI');
+check($bounded === 5, 'should-fix (a) + L7: all five dialplan REGEX guards cap at 20 digits like PHP/AGI');
 $toggle = $ctx('app-allowlist-pause-toggle', 's');
 $pauseExpr = array_values(array_filter($toggle, function ($l) { return $l['app'] === 'ext_gotoif' && $l['args'][1] === 'paused:unpaused'; }));
 check(count($pauseExpr) === 1 && $pauseExpr[0]['args'][0] === '$[${DB_EXISTS(allowlist/pause)}]', 'A7 pause expression has no stray ]');
@@ -276,6 +276,100 @@ check($skipped === array() && $db['/allowlist/dest'] === 'tst-blocked,s,1' && $d
 $skipped = $restore->restoreAllowlistEntries(array('pause' => (string)(time() + 86400 + 120)));
 check(count($skipped) === 1, 'pause just over 24 hours ahead is skipped');
 check(strpos(implode("\n", array_column($restore->logs, 1)), '0000') === false, 'restore log never contains a PIN');
+
+// --- M3: CSRF token on state-changing requests -----------------------------
+list($fp, $al) = fresh();
+$tok = $al->csrfToken();
+check(is_string($tok) && strlen($tok) === 64 && $al->csrfToken() === $tok, 'CSRF token is stable per session');
+foreach (array('add' => array('number' => '2025550199'), 'del' => array('number' => '2025550113'), 'pause' => array('pause' => '1'), 'block' => array('number' => '2025550113'), 'bulkdelete' => array('numbers' => '["2025550113"]')) as $cmd => $args) {
+	$before = $fp->astman->db;
+	foreach (array(null, '', 'forged') as $bad) {
+		$r = ajax($al, array('command' => $cmd, 'token' => $bad) + $args);
+		check($r['status'] === false && $fp->astman->db === $before, "AJAX $cmd without a valid token is rejected and changes nothing (" . var_export($bad, true) . ')');
+	}
+}
+check($fp->Blacklist->added === array(), 'no blacklist write without a token');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550198', 'token' => 'x'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'edit (add+oldval) also needs the token');
+$fp->Config = new class { public function get($k) { return '20.0'; } };
+ob_start(); $_REQUEST = array('action' => 'settings', 'pause' => '1', 'goto0' => 'x', 'x0' => 'tst-blocked,s,1');
+$al->doConfigPageInit('allowlist'); $html = ob_get_clean();
+check(strpos($html, 'nothing was changed') !== false && $fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1' && $fp->astman->db['/allowlist/pause'] === '0', 'settings form without a token changes nothing');
+
+// --- L1: unsafe caller IDs never reach AGI or Contact Manager ----------------
+class RecAGI { public $cmds = array(); public function verbose($m) {} public function database_get($f, $k) { $this->cmds[] = "$f/$k"; return array('result' => 0); } }
+$AGI = new RecAGI();
+$FreePBX = new FakeFreePBX();
+foreach (array('"', '', 'anonymous', '123 456', "1\n2", '+') as $cid) {
+	check(searchAsteriskPhonebook($cid) === false && searchContactManager($cid) === false && searchAllowList($cid) === false, 'unsafe CID ' . json_encode($cid) . ' returns false');
+}
+check($AGI->cmds === array(), 'no AGI DATABASE GET was issued for unsafe CIDs');
+searchAsteriskPhonebook('2025550100');
+check(in_array('cidname/2025550100', $AGI->cmds, true), 'a sane CID is still looked up');
+
+// --- L3: numbers masked in AGI logs -----------------------------------------
+check(allowlistMask('15551234567', false) === '*******4567', 'mask keeps the last 4 digits');
+check(allowlistMask('123', false) === '***' && allowlistMask('15551234567', true) === '15551234567', 'short numbers fully masked; debug shows full');
+$agiSrc = file_get_contents($root . '/agi-bin/allowlist-check.agi') . file_get_contents($root . '/agi-bin/allowlist-autoadd.agi') . file_get_contents($root . '/agi-bin/allowlist-common.php');
+$rawNumberInLog = false;
+foreach (preg_split('/\R/', $agiSrc) as $line) {
+	if (strpos($line, 'verbose(') === false) { continue; }
+	$line = preg_replace('/allowlistMask\([^)]*\)/', '', $line);
+	if (preg_match('/(?<!\\\\)\$(callerid|dial_number|number)\b/', $line)) { $rawNumberInLog = true; }
+}
+check(!$rawNumberInLog, 'no AGI verbose() logs a raw number');
+
+// --- L2: bulk delete cost and cap -------------------------------------------
+list($fp, $al) = fresh();
+$shows = 0; $orig = $fp->astman;
+$fp->astman = new class($orig, $shows) extends FakeAstman { public $n = 0; public function __construct($o) { $this->db = $o->db; } public function database_show($f) { $this->n++; return parent::database_show($f); } };
+$al = new Allowlist($fp);
+$nums = array(); for ($i = 0; $i < 50; $i++) { $nums[] = (string)(2025551000 + $i); $fp->astman->db['/allowlist/' . (2025551000 + $i)] = 'x'; }
+$fp->astman->n = 0;
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode($nums)));
+check($r['status'] === 'true' && $fp->astman->n === 1, 'bulkdelete of 50 numbers lists AstDB once');
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode(array_fill(0, 1001, '2025550113'))));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'bulkdelete over 1000 numbers is rejected');
+
+// --- L4: legacy CSV upload --------------------------------------------------
+list($fp, $al) = fresh();
+$src = tempnam(sys_get_temp_dir(), 'altest'); file_put_contents($src, "number,description\n2025550161,ok\ndest,x\n2025550162,\"=1+1\"\n");
+$mv = function ($from, $to) { return copy($from, $to); };
+$res = $al->importUploadedCsv(array('error' => UPLOAD_ERR_OK, 'name' => 'list.csv', 'tmp_name' => $src), $mv);
+check($res['ok'] === false && strpos($res['message'], '1 rows were rejected') !== false && isset($fp->astman->db['/allowlist/2025550161']), 'CSV import reports rejected rows, keeps valid ones');
+check($fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1', 'CSV import cannot write settings keys');
+$res = $al->importUploadedCsv(array('error' => UPLOAD_ERR_OK, 'name' => 'x.txt', 'tmp_name' => $src), $mv);
+check($res['ok'] === false, 'non-CSV upload rejected');
+check($al->importUploadedCsv(null)['ok'] === false, 'missing allowlistfile entry rejected');
+$cls = file_get_contents($root . '/Allowlist.class.php');
+check(strpos($cls, "sys_get_temp_dir() . '/' . \$_FILES") === false && strpos($cls, "\$_FILES['file']") === false, 'no client filename in /tmp, no wrong $_FILES key');
+unlink($src);
+
+// --- L5: block forwards only number + description ----------------------------
+list($fp, $al) = fresh();
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113', 'description' => 'spam', 'extra' => 'x', 'module' => 'allowlist'));
+check($r['status'] === true && $fp->Blacklist->added === array(array('number' => '2025550113', 'description' => 'spam')), 'Blacklist gets exactly number and description');
+list($fp, $al) = fresh();
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113', 'description' => "a\r\nb"));
+check($r['status'] === false && $fp->Blacklist->added === array() && isset($fp->astman->db['/allowlist/2025550113']), 'block with a bad description is rejected');
+
+// --- L6: CSV export formula guard ---------------------------------------------
+foreach (array('=HYPERLINK("x")', '+1', '-1', '@SUM(A1)') as $v) {
+	check(Allowlist::csvSafeCell($v) === "'" . $v, 'export neutralises ' . $v);
+}
+check(Allowlist::csvSafeCell('Alice') === 'Alice' && Allowlist::csvSafeCell('+12025550111') === "'+12025550111", 'plain cells unchanged; leading + is quoted');
+
+// --- L7: remove feature code guarded --------------------------------------------
+$rm = array_values(array_filter($ext->lines, function ($l) { return $l['ctx'] === 'app-allowlist-remove' && $l['exten'] === '1'; }));
+check($rm[0]['app'] === 'ext_set' && $rm[0]['args'][0] === 'ALNROK' && $rm[2]['app'] === 'ext_dbdel', 'remove sets ALNROK and checks it before DBdel');
+
+// --- L8: route/DID writers validated --------------------------------------------
+list($fp, $al) = fresh();
+check($al->routeAdd(1, 'a', '10') === false && $al->routeAdd(1, '0', '3') === false && $al->routeAdd('1/x', '0', '10') === false, 'routeAdd rejects non-ints and stocount < 7');
+check($al->routeAdd('2', '1', '10') === true && $fp->astman->db['/allowlist/autoadd/2'] === '1,1,10', 'routeAdd valid stores ints');
+check($al->didAdd('5550101', '') === true && isset($fp->astman->db['/allowlist/did/5550101']), 'didAdd digits ok');
+check($al->didAdd('', '') === true && $al->didAdd('_X.', '') === true, 'didAdd keeps any-DID and pattern routes');
+check($al->didAdd('555"0', '') === false && $al->didAdd('555', 'a/b') === false, 'didAdd rejects quotes and slashes');
 
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

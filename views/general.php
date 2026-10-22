@@ -18,6 +18,7 @@ if(isset($message)){
 						<form class="fpbx-submit" name="frm_allowlist" action="" method="post" role="form">
 							<form autocomplete="off" name="edit" action="" method="post" onsubmit="return edit_onsubmit();">
 							<input type="hidden" name="action" value="settings">
+							<input type="hidden" id="allowlist_csrf" name="token" value="<?php echo htmlspecialchars(isset($csrf_token) ? $csrf_token : '', ENT_QUOTES, 'UTF-8') ?>">
 							<ul class="nav nav-tabs" role="tablist">
 								<li role="presentation" data-name="allowlist" class="active">
 									<a href="#allowlist" aria-controls="allowlist" role="tab" data-toggle="tab">

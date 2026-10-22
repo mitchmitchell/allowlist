@@ -33,7 +33,7 @@ if ($res['result'] == 0) {
        $dial_number = $res['data'];
 }
 
-$AGI->verbose("initial \$dial_number = \"$dial_number\"");
+$AGI->verbose("initial \$dial_number = \"" . allowlistMask($dial_number) . "\"");
 $digit_remcount = 0;
 $digit_stocount = 99;
  
@@ -59,13 +59,13 @@ $AGI->verbose("\$digit_stocount = \"$digit_stocount\"");
 
 $dial_number = substr($dial_number,$digit_remcount,$digit_stocount);
 
-$AGI->verbose("searching for final \"$dial_number\" in asterisk database");
+$AGI->verbose("searching for final \"" . allowlistMask($dial_number) . "\" in asterisk database");
 
 // Only digit numbers (optional leading +) may be written to the shared allowlist family.
 if (strlen($dial_number) != 0) {
 	$valid_number = allowlistNormalizeNumber($dial_number);
 	if ($valid_number === false) {
-		$AGI->verbose("\"$dial_number\" is not a valid allowlist number (digits, optional leading +), not autoadding");
+		$AGI->verbose("\"" . allowlistMask($dial_number) . "\" is not a valid allowlist number (digits, optional leading +), not autoadding");
 		exit;
 	}
 	$dial_number = $valid_number;
@@ -75,12 +75,12 @@ if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || sea
 	$AGI->verbose("adding number to allowlist");
 	$done = $AGI->database_put('allowlist',$dial_number,'automatically added');
 	if ($done['result'] == 0) {
-		$AGI->verbose("could not add $dial_number to allowlist");
+		$AGI->verbose("could not add " . allowlistMask($dial_number) . " to allowlist");
 	} else {
-		$AGI->verbose("added $dial_number to allowlist");
+		$AGI->verbose("added " . allowlistMask($dial_number) . " to allowlist");
 	}
 } else {
-	$AGI->verbose("$dial_number empty or found in asterisk database, not autoadding to allowlist");
+	$AGI->verbose(allowlistMask($dial_number) . " empty or found in asterisk database, not autoadding to allowlist");
 }
 
 $AGI->verbose("scripted completed");
