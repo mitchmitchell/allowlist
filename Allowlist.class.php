@@ -11,7 +11,9 @@ use RuntimeException;
 class Allowlist implements BMO
 {
     /** Settings keys that share the allowlist AstDB family (never valid numbers). */
-    const RESERVED_KEYS = array('dest', 'pause', 'knowncallers');
+    const RESERVED_KEYS = array('dest', 'pause', 'knowncallers', 'pausepin');
+    /** Longest pause any path may set (seconds). */
+    const PAUSE_MAX_SECS = 86400;
     const RESERVED_PREFIXES = array('did/', 'autoadd/');
     /** Digits only, optional leading +, 1-20 digits (ADR-AL-1). Mirrored in agi-bin/allowlist-common.php. */
     const NUMBER_PATTERN = '/^\+?[0-9]{1,20}$/D';
@@ -137,6 +139,9 @@ class Allowlist implements BMO
         return is_array($all) && isset($all[$dest]);
     }
 
+    /** @var string[] audit messages written during this request (for tests) */
+    public $auditEntries = array();
+
     public function __construct($freepbx = null)
     {
         if ($freepbx == null)
@@ -253,7 +258,7 @@ class Allowlist implements BMO
                 return $ret ? array('status' => $ret) : array('status' => false, 'message' => $this->lastError);
             break;
             case 'pause':
-                $ret = $this->pauseSet($request['pause']);
+                $ret = $this->pauseSet(isset($request['pause']) ? $request['pause'] : false, 'admin web UI');
                 return array(
                     'status' => $ret
                 );
@@ -364,8 +369,19 @@ class Allowlist implements BMO
                     {
                         echo '<div class="alert alert-danger" role="alert">' . htmlspecialchars($this->lastError, ENT_QUOTES, 'UTF-8') . '</div>';
                     }
-                    $this->pauseSet($request['pause']);
+                    $this->pauseSet(isset($request['pause']) ? $request['pause'] : false, 'admin settings page');
                     $this->allowknowncallersSet($request['knowncallers']);
+                    if (!empty($request['pausepin_clear']))
+                    {
+                        $this->pausePinSet('');
+                    }
+                    elseif (isset($request['pausepin']) && $request['pausepin'] !== '')
+                    {
+                        if (!$this->pausePinSet($request['pausepin']))
+                        {
+                            echo '<div class="alert alert-danger" role="alert">' . htmlspecialchars($this->lastError, ENT_QUOTES, 'UTF-8') . '</div>';
+                        }
+                    }
                 break;
                 case 'import':
                     if ($_FILES['file']['error'] > 0)
@@ -658,10 +674,15 @@ class Allowlist implements BMO
         }		
 	    $id = 'app-allowlist-pause-toggle';
         $c = 's';
-        $ext->add($id, $c, '', new \ext_gosubif('$[${DB_EXISTS(allowlist/pause)}]', 'app-allowlist-pause-disable,s,1:app-allowlist-pause-enable,s,1'));
         $ext->add($id, $c, '', new \ext_answer());
         $ext->add($id, $c, '', new \ext_macro('user-callerid'));
         $ext->add($id, $c, '', new \ext_wait(1));
+        // M2: optional PIN. Authenticate hangs up after 3 bad tries, so the toggle never runs.
+        $ext->add($id, $c, '', new \ext_gotoif('$[${DB_EXISTS(allowlist/pausepin)}]', 'pin:toggle'));
+        $ext->add($id, $c, 'pin', new \ext_authenticate('${DB(allowlist/pausepin)}'));
+        $ext->add($id, $c, 'toggle', new \ext_gosubif('$[${DB_EXISTS(allowlist/pause)}]', 'app-allowlist-pause-disable,s,1:app-allowlist-pause-enable,s,1'));
+        // M2: audit who toggled (internal extension only; never the PIN).
+        $ext->add($id, $c, '', new \ext_log('NOTICE', 'Allowlist pause toggled by extension ${AMPUSER} now ${IF($[${DB_EXISTS(allowlist/pause)}]?paused:unpaused)}'));
         $ext->add($id, $c, '', new \ext_gotoif('$[${DB_EXISTS(allowlist/pause)}]', 'paused:unpaused'));
         $ext->add($id, $c, 'paused', new \ext_playback('dictate/pause&enabled'));		
         $ext->add($id, $c, '', new \ext_hangup());
@@ -731,7 +752,8 @@ class Allowlist implements BMO
                     'allowlist' => $allowlistitems,
                     'destination' => $destination,
                     'filter_knowncallers' => $filter_knowncallers,
-                    'pause' => $pause
+                    'pause' => $pause,
+                    'pausepin_set' => $this->pausePinIsSet()
                 ));
         }
     }
@@ -751,7 +773,8 @@ class Allowlist implements BMO
                 $array_continue = array(
                     '/allowlist/dest',
                     '/allowlist/pause',
-                    '/allowlist/knowncallers'
+                    '/allowlist/knowncallers',
+                    '/allowlist/pausepin'
                 );
                 if (in_array($k, $array_continue) || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
                 {
@@ -915,25 +938,99 @@ class Allowlist implements BMO
 
 
     /**
-     * Whether to pause allowlist checking globally
-     * @param  boolean $pause True to pause, false otherwise
+     * Interpret a pause request strictly: only true-like values pause.
+     * '0', '', 'false', 'no', 'off', null and arrays do not.
      */
-    public function pauseSet($pause)
+    public static function pauseRequested($pause)
+    {
+        if (is_bool($pause))
+        {
+            return $pause;
+        }
+        if (!is_scalar($pause))
+        {
+            return false;
+        }
+        return filter_var((string)$pause, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true;
+    }
+
+    /**
+     * Whether to pause allowlist checking globally (for at most PAUSE_MAX_SECS).
+     * @param  boolean $pause True to pause, false otherwise
+     * @param  string  $source Who asked (audit log); never a number or PIN
+     * @return boolean True on success
+     */
+    public function pauseSet($pause, $source = 'unknown')
     {
         if ($this->astman->connected())
         {
+            $on = self::pauseRequested($pause);
+            $was = $this->astman->database_get('allowlist', 'pause');
             // Remove filtering for pauseed/unknown cid
             $this->astman->database_del('allowlist', 'pause');
             // Add it back if it's checked
-            if (!empty($pause))
+            if ($on)
             {
-                $secs = strtotime(date('Y-m-d H:i:s')) + 86400;
+                $secs = time() + self::PAUSE_MAX_SECS;
                 $this->astman->database_put('allowlist', 'pause', $secs);
             }
+            if ($on || ($was !== false && $was !== '' && $was !== '0'))
+            {
+                $this->auditLog(sprintf('Allowlist screening %s by %s', $on ? 'paused for 24 hours' : 'unpaused', $source));
+            }
+            return true;
         }
         else
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+    }
+
+    /**
+     * Set (digits, 4-12) or clear ('') the optional PIN required by the pause feature code.
+     * The PIN is never logged or returned by any API.
+     */
+    public function pausePinSet($pin)
+    {
+        $this->lastError = '';
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        if ($pin === '' || $pin === null)
+        {
+            $this->astman->database_del('allowlist', 'pausepin');
+            $this->auditLog('Allowlist pause PIN cleared');
+            return true;
+        }
+        if (!is_string($pin) || !preg_match('/^[0-9]{4,12}$/', $pin))
+        {
+            $this->lastError = _('Pause PIN must be 4 to 12 digits; the previous PIN was kept.');
+            return false;
+        }
+        $this->astman->database_put('allowlist', 'pausepin', $pin);
+        $this->auditLog('Allowlist pause PIN changed');
+        return true;
+    }
+
+    /** True when a pause PIN is configured (the PIN itself is never exposed). */
+    public function pausePinIsSet()
+    {
+        $v = $this->astman->database_get('allowlist', 'pausepin');
+        return is_string($v) && $v !== '';
+    }
+
+    /** Audit trail for security-relevant changes. Messages never contain numbers or PINs. */
+    public function auditLog($msg)
+    {
+        $this->auditEntries[] = $msg;
+        if (function_exists('freepbx_log') && defined('FPBX_LOG_NOTICE'))
+        {
+            freepbx_log(FPBX_LOG_NOTICE, $msg);
+        }
+        else
+        {
+            error_log($msg);
         }
     }
 

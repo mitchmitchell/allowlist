@@ -123,6 +123,32 @@ if(isset($message)){
 											</div>
 										</div>
 										<!--End Destination-->
+										<!--Pause feature-code PIN (M2); the stored PIN is never shown-->
+										<div class="element-container">
+											<div class="row">
+												<div class="col-md-12">
+													<div class="row">
+														<div class="form-group">
+															<div class="col-md-4">
+																<label class="control-label" for="pausepin"><?php echo _("Pause Feature Code PIN") ?></label>
+																<i class="fa fa-question-circle fpbx-help-icon" data-for="pausepin"></i>
+															</div>
+															<div class="col-md-8">
+																<input type="password" class="form-control" id="pausepin" name="pausepin" value="" autocomplete="new-password" inputmode="numeric" pattern="[0-9]{4,12}" placeholder="<?php echo !empty($pausepin_set) ? _("(set; leave blank to keep)") : _("(none)") ?>">
+																<?php if (!empty($pausepin_set)) { ?>
+																<input type="checkbox" name="pausepin_clear" id="pausepin_clear" value="1"> <label for="pausepin_clear"><?php echo _("Remove PIN") ?></label>
+																<?php } ?>
+															</div>
+														</div>
+													</div>
+												</div>
+											</div>
+											<div class="row">
+												<div class="col-md-12">
+													<span id="pausepin-help" class="help-block fpbx-help-block"><?php echo _("Optional 4-12 digit PIN that callers must enter before the pause feature code toggles screening. Every pause or unpause is written to the log.")?></span>
+												</div>
+											</div>
+										</div>
 									</div>
 								</div>
 						</form>

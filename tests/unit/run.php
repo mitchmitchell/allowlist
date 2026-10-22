@@ -229,5 +229,53 @@ $logged = implode("\n", array_column($restore->logs, 1));
 check(count($skipped) === 2 && strpos($logged, '<') === false && strpos($logged, '&lt;img') !== false, 'restore skip-log is HTML-escaped');
 check(preg_match('//u', $logged) === 1 && strpos($logged, str_repeat('ü', 40) . ':') !== false, 'restore skip-log truncates with mb_substr');
 
+// --- M2: pause authorization + audit ---------------------------------------
+list($fp, $al) = fresh();
+foreach (array('0', '', 'false', 'no', 'off', null, array(1)) as $v) {
+	$al->pauseSet($v, 'test');
+	check(!isset($fp->astman->db['/allowlist/pause']), 'pauseSet(' . var_export($v, true) . ') does not pause');
+}
+$t0 = time();
+$al->pauseSet('1', 'test');
+$p = (int)$fp->astman->db['/allowlist/pause'];
+check($p > $t0 && $p <= time() + 86400, "pauseSet('1') pauses for at most 24 hours");
+check(in_array('Allowlist screening paused for 24 hours by test', $al->auditEntries, true), 'pause is audit-logged with its source');
+$al->pauseSet('0', 'test');
+check(in_array('Allowlist screening unpaused by test', $al->auditEntries, true), 'unpause is audit-logged');
+$r = ajax($al, array('command' => 'pause', 'pause' => 'false'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/pause']), "AJAX pause='false' does not pause");
+check($al->pausePinSet('12') === false && !isset($fp->astman->db['/allowlist/pausepin']), 'short PIN rejected');
+check($al->pausePinSet('12a4') === false, 'non-digit PIN rejected');
+check($al->pausePinSet('0000') === true && $al->pausePinIsSet(), 'dummy 4-digit PIN accepted');
+check(strpos(implode("\n", $al->auditEntries), '0000') === false, 'audit log never contains the PIN');
+check(Allowlist::findInList($al->getAllowlist(), 'pausepin') === null, 'PIN key never appears in the allowlist grid');
+check($al->numberDel('pausepin') === false && isset($fp->astman->db['/allowlist/pausepin']), 'PIN key cannot be deleted as a number');
+check($al->pausePinSet('') === true && !$al->pausePinIsSet(), 'PIN can be cleared');
+$ext = new FakeExt();
+$al->doDialplanHook($ext, 'x', 'x');
+$tog = array_values(array_filter($ext->lines, function ($l) { return $l['ctx'] === 'app-allowlist-pause-toggle'; }));
+$apps = array_column($tog, 'app');
+$auth = array_search('ext_authenticate', $apps, true);
+$gosub = array_search('ext_gosubif', $apps, true);
+check($auth !== false && $gosub !== false && $auth < $gosub, 'toggle dialplan authenticates before toggling');
+check($tog[$auth]['args'][0] === '${DB(allowlist/pausepin)}' && $tog[$auth]['label'] === 'pin', 'Authenticate uses the stored PIN by reference only');
+check(in_array('ext_log', $apps, true), 'toggle dialplan writes an audit log line');
+
+// --- M4: restore applies A5 and bounds pause ---------------------------------
+list($fp, $al) = fresh();
+$fp->Allowlist = $al;
+$restore = new \FreePBX\modules\Allowlist\Restore($fp);
+$skipped = $restore->restoreAllowlistEntries(array('dest' => 'bogus-ctx,s,1', 'pause' => '9999999999', 'autoadd/1' => 'x', 'knowncallers' => 'yes', 'pausepin' => '12'));
+$db = $fp->astman->db;
+check(count($skipped) === 5, 'restore skips bogus dest, far-future pause, bad autoadd, knowncallers, PIN');
+check($db['/allowlist/dest'] === 'app-blackhole,hangup,1' && $db['/allowlist/pause'] === '0' && $db['/allowlist/autoadd/1'] === '1,0,99' && $db['/allowlist/knowncallers'] === '1', 'skipped settings leave stored values untouched');
+$soon = (string)(time() + 3600);
+$skipped = $restore->restoreAllowlistEntries(array('dest' => 'tst-blocked,s,1', 'pause' => $soon, 'autoadd/2' => '1,2,3', 'pausepin' => '0000'));
+$db = $fp->astman->db;
+check($skipped === array() && $db['/allowlist/dest'] === 'tst-blocked,s,1' && $db['/allowlist/pause'] === $soon && $db['/allowlist/autoadd/2'] === '1,2,3' && $db['/allowlist/pausepin'] === '0000', 'valid settings (registered dest, pause within 24 h) restore');
+$skipped = $restore->restoreAllowlistEntries(array('pause' => (string)(time() + 86400 + 120)));
+check(count($skipped) === 1, 'pause just over 24 hours ahead is skipped');
+check(strpos(implode("\n", array_column($restore->logs, 1)), '0000') === false, 'restore log never contains a PIN');
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

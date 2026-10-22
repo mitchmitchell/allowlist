@@ -26,7 +26,8 @@ class Restore Extends Base\RestoreBase{
 
 	/**
 	 * Restore legacy allowlist AstDB entries. Settings keys (dest, pause, knowncallers,
-	 * did/..., autoadd/...) are written directly after a CR/LF/NUL check; everything else
+	 * pausepin, did/..., autoadd/...) pass a CR/LF/NUL check and settingRejectReason();
+	 * dest also goes through destinationSet() (A5). Everything else
 	 * must pass Allowlist::numberAdd(). Skipped entries are logged and returned.
 	 * @param  array $entries key => value, keys without the /allowlist/ prefix
 	 * @return array Skipped entries as "key: reason"
@@ -37,10 +38,22 @@ class Restore Extends Base\RestoreBase{
 		$skipped = [];
 		foreach($entries as $key => $value){
 			$key = (string)$key;
-			$isSetting = in_array($key, ['dest', 'pause', 'knowncallers'], true) || strpos($key, 'did/') === 0 || strpos($key, 'autoadd/') === 0;
+			$isSetting = in_array($key, ['dest', 'pause', 'knowncallers', 'pausepin'], true) || strpos($key, 'did/') === 0 || strpos($key, 'autoadd/') === 0;
 			if($isSetting){
 				if(!is_scalar($value) || preg_match('/[\r\n\x00]/', $key . (string)$value)){
 					$skipped[] = $this->describeSkipped($key, _('setting contains CR, LF or NUL'));
+					continue;
+				}
+				$reason = $this->settingRejectReason($allowlist, $key, (string)$value);
+				if($reason !== null){
+					$skipped[] = $this->describeSkipped($key, $reason);
+					continue;
+				}
+				if($key === 'dest'){
+					// A5: same registry check as the UI/CLI path.
+					if(!$allowlist->destinationSet((string)$value)){
+						$skipped[] = $this->describeSkipped($key, $allowlist->getLastError());
+					}
 					continue;
 				}
 				$astman->database_put('allowlist', $key, (string)$value);
@@ -59,6 +72,34 @@ class Restore Extends Base\RestoreBase{
 			}
 		}
 		return $skipped;
+	}
+
+	/**
+	 * Value checks for restored settings (M4). Returns a reason to skip, or null.
+	 * pause: numeric epoch no later than now + 24 h (0 = not paused).
+	 * autoadd/*: "1,<int>,<int>". pausepin: 4-12 digits. knowncallers: '' or '1'.
+	 */
+	public function settingRejectReason($allowlist, $key, $value){
+		if($key === 'dest'){
+			return $allowlist->isValidDestination($value) ? null : _('destination is not a registered destination');
+		}
+		if($key === 'pause'){
+			$max = time() + \FreePBX\modules\Allowlist::PAUSE_MAX_SECS;
+			if(!preg_match('/^[0-9]{1,12}$/', $value) || (int)$value > $max){
+				return _('pause must be a time no more than 24 hours ahead');
+			}
+			return null;
+		}
+		if($key === 'knowncallers'){
+			return in_array($value, ['', '0', '1'], true) ? null : _('knowncallers must be 0 or 1');
+		}
+		if($key === 'pausepin'){
+			return preg_match('/^[0-9]{4,12}$/', $value) ? null : _('pause PIN must be 4 to 12 digits');
+		}
+		if(strpos($key, 'autoadd/') === 0){
+			return preg_match('/^1,[0-9]{1,6},[0-9]{1,6}$/', $value) ? null : _('autoadd value must be 1,<int>,<int>');
+		}
+		return null;
 	}
 
 	private function describeSkipped($key, $reason){
