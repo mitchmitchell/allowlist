@@ -400,6 +400,26 @@ $fp->astman->failDel = true;
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
 $fp->astman->failDel = false;
 check($r['status'] === false && $fp->astman->db['/allowlist/2025550114'] === 'target before', 'edit with failed delete restores the prior value of the new key');
+// Bugbot/Claude: a failed rollback is reported, not hidden behind "nothing was changed"
+list($fp, $al) = fresh();
+$fp->astman->failDel = true; // blocks the old-key delete and the rollback delete
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false;
+check($r['status'] === false && strpos($r['message'], 'may still be') !== false && strpos($r['message'], 'nothing was changed') === false, 'edit with failed rollback delete says the new number may remain');
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist/2025550114'] = 'target before';
+$fp->astman->failDel = true;
+$fp->astman->failPutAfter = 1; // the edit put succeeds, the rollback put fails
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false; $fp->astman->failPutAfter = -1;
+check($r['status'] === false && strpos($r['message'], 'may still be') !== false, 'edit with failed rollback put says the new number may remain');
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist/2025550114'] = 'target before';
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false;
+check($r['status'] === false && strpos($r['message'], 'nothing was changed') !== false, 'edit with a successful rollback still says nothing was changed');
+list($fp, $al) = fresh();
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550113', 'description' => 'renamed'));
 check($r['status'] === true && $fp->astman->db['/allowlist/2025550113'] === 'renamed', 'edit of the description only keeps the entry');
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550177', 'number' => '2025550115', 'description' => 'x'));

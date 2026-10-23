@@ -893,7 +893,8 @@ class Allowlist implements BMO
     /**
      * Replace an existing entry: write the new entry first, then delete the old one.
      * A failed write leaves the old entry in place; a failed delete restores the
-     * previous state of the new key so the edit is all-or-nothing.
+     * previous state of the new key so the edit is all-or-nothing; if that
+     * rollback fails too, lastError says the new number may still be present.
      * @param  string $oldval Existing allowlist number
      * @param  array  $post   New 'number' and optional 'description'
      * @return boolean        Status of edit (see getLastError())
@@ -928,11 +929,16 @@ class Allowlist implements BMO
         {
             if ($prior === false || $prior === null || $prior === '')
             {
-                $this->astman->database_del('allowlist', $entry['number']);
+                $restored = $this->astman->database_del('allowlist', $entry['number']);
             }
             else
             {
-                $this->astman->database_put('allowlist', $entry['number'], $prior);
+                $restored = $this->astman->database_put('allowlist', $entry['number'], $prior);
+            }
+            if (!$restored)
+            {
+                $this->lastError = sprintf(_('Could not remove the old number, and undoing the edit also failed: %s may still be on the allowlist alongside %s. Check both entries.'), $entry['number'], $oldval);
+                return false;
             }
             $this->lastError = _('Could not remove the old number: the Asterisk database rejected the delete; nothing was changed.');
             return false;
