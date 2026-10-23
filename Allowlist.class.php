@@ -247,8 +247,7 @@ class Allowlist implements BMO
                 {
                     return array('status' => false, 'message' => $this->lastError);
                 }
-                $this->numberDel(isset($request['oldval']) ? $request['oldval'] : null);
-                if (!$this->numberAdd($request))
+                if (!$this->numberEdit(isset($request['oldval']) ? $request['oldval'] : null, $request))
                 {
                     return array('status' => false, 'message' => $this->lastError);
                 }
@@ -892,6 +891,56 @@ class Allowlist implements BMO
     }
 
     /**
+     * Replace an existing entry: write the new entry first, then delete the old one.
+     * A failed write leaves the old entry in place; a failed delete restores the
+     * previous state of the new key so the edit is all-or-nothing.
+     * @param  string $oldval Existing allowlist number
+     * @param  array  $post   New 'number' and optional 'description'
+     * @return boolean        Status of edit (see getLastError())
+     */
+    public function numberEdit($oldval, $post)
+    {
+        $entry = $this->checkEntry($post);
+        if (!$entry)
+        {
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $list = $this->getAllowlist();
+        if (!$this->isDeletableNumber($oldval, $list))
+        {
+            $this->lastError = _('The number being edited is not an allowlist number; nothing was changed.');
+            return false;
+        }
+        $prior = $this->astman->database_get('allowlist', $entry['number']);
+        if (!$this->numberAdd($post))
+        {
+            return false; // old entry untouched
+        }
+        if ($oldval === $entry['number'])
+        {
+            return true; // same key: the put already replaced the description
+        }
+        if (!$this->astman->database_del('allowlist', $oldval))
+        {
+            if ($prior === false || $prior === null || $prior === '')
+            {
+                $this->astman->database_del('allowlist', $entry['number']);
+            }
+            else
+            {
+                $this->astman->database_put('allowlist', $entry['number'], $prior);
+            }
+            $this->lastError = _('Could not remove the old number: the Asterisk database rejected the delete; nothing was changed.');
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Validate a number/description pair without storing it.
      * @param  array $post Array with 'number' and optional 'description'
      * @return array|false Normalized ['number', 'description'], or false (see getLastError())
@@ -990,15 +1039,18 @@ class Allowlist implements BMO
                 $this->lastError = _('Invalid destination for non-allowlisted calls; the previous destination was kept.');
                 return false;
             }
-            $this->astman->database_del('allowlist', 'dest');
             if (!empty($dest))
             {
-                return $this->astman->database_put('allowlist', 'dest', $dest);
-            }
-            else
-            {
+                // Put overwrites in place, so a failed write keeps the previous destination.
+                if (!$this->astman->database_put('allowlist', 'dest', $dest))
+                {
+                    $this->lastError = _('Could not save the destination: the Asterisk database rejected the write; the previous destination was kept.');
+                    return false;
+                }
                 return true;
             }
+            $this->astman->database_del('allowlist', 'dest');
+            return true;
         }
         else
         {

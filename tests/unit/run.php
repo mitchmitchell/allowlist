@@ -383,5 +383,31 @@ $fp->astman->failDel = true;
 check($al->numberDel('2025550199') === false && $al->getLastError() !== '', 'numberDel returns false with a message when database_del fails');
 $fp->astman->failDel = false;
 
+// --- Bugbot: edit and destination writes are all-or-nothing ---------------------
+list($fp, $al) = fresh();
+$fp->astman->failPut = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+check($r['status'] === false && $r['message'] !== '' && $fp->astman->db['/allowlist/2025550113'] === 'old entry' && !isset($fp->astman->db['/allowlist/2025550114']), 'edit with failed put keeps the old entry');
+$fp->astman->failPut = false;
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false;
+check($r['status'] === false && $r['message'] !== '' && isset($fp->astman->db['/allowlist/2025550113']), 'edit with failed delete reports failure and keeps the old entry');
+// failDel also blocks the rollback delete in this fake, so check the restore path with an existing target
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist/2025550114'] = 'target before';
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false;
+check($r['status'] === false && $fp->astman->db['/allowlist/2025550114'] === 'target before', 'edit with failed delete restores the prior value of the new key');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550113', 'description' => 'renamed'));
+check($r['status'] === true && $fp->astman->db['/allowlist/2025550113'] === 'renamed', 'edit of the description only keeps the entry');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550177', 'number' => '2025550115', 'description' => 'x'));
+check($r['status'] === false && !isset($fp->astman->db['/allowlist/2025550115']), 'edit of a missing old number writes nothing');
+list($fp, $al) = fresh();
+$fp->astman->failPut = true;
+check($al->destinationSet('tst-blocked,s,1') === false && $al->getLastError() !== '' && $fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1', 'destinationSet failed put keeps previous dest with a message');
+$fp->astman->failPut = false;
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);
