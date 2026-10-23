@@ -20,11 +20,32 @@
 		cbrows[i] = row['number'];
 	}
 
+	// Grid values come from AstDB, which outside callers (*40), bulk import, restore and the API can write.
+	// Escape everything that goes into the action links' HTML; ids carry only the row index.
+	function alEscapeHtml(v){
+		return String(v === null || v === undefined ? '' : v)
+			.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+	}
+	// Descriptions are stored htmlentities-encoded; decode once so the edit dialog shows the text as before.
+	function alDecodeEntities(v){
+		var s = String(v === null || v === undefined ? '' : v);
+		if (typeof document !== 'undefined') {
+			var t = document.createElement('textarea');
+			t.innerHTML = s;
+			return t.value;
+		}
+		return s.replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+	}
+
 	function linkFormatter(value,row,idx){
-		var html = '<a href="#" data-toggle="modal" data-target="#addNumber" data-number="'+row['number']+'" data-description="'+row['description']+'" ><i class="fa fa-pencil"></i></a>';
-		html += '&nbsp;<a href="#" id="del'+row['number']+'" data-idx="'+idx+'" data-number="'+row['number']+'" ><i class="fa fa-trash"></i></a>';
-		html += '&nbsp;<a href="#" id="block'+row['number']+'" data-idx="'+idx+'" data-number="'+row['number']+'" data-description="'+row['description']+'" ><i class="fa fa-ban"></i></a>';
-		html += '&nbsp;<a href="#" id="report'+row['number']+'" data-number="'+row['number']+'"><i class="fa fa-area-chart"></i></a>';
+		var num = alEscapeHtml(row['number']);
+		var desc = alEscapeHtml(alDecodeEntities(row['description']));
+		var i = parseInt(idx, 10) || 0;
+		var html = '<a href="#" data-toggle="modal" data-target="#addNumber" data-number="'+num+'" data-description="'+desc+'" ><i class="fa fa-pencil"></i></a>';
+		html += '&nbsp;<a href="#" id="del'+i+'" data-idx="'+i+'" data-number="'+num+'" ><i class="fa fa-trash"></i></a>';
+		html += '&nbsp;<a href="#" id="block'+i+'" data-idx="'+i+'" data-number="'+num+'" data-description="'+desc+'" ><i class="fa fa-ban"></i></a>';
+		html += '&nbsp;<a href="#" id="report'+i+'" data-number="'+num+'"><i class="fa fa-area-chart"></i></a>';
 		return html;
 	}
 	function descFormatter(value){
