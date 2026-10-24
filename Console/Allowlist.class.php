@@ -198,7 +198,9 @@ class Allowlist extends Command {
 				$question = new ChoiceQuestion($table->render(),$destids,-1);
 				$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
 				$output->writeln(sprintf(_("<question>Setting allowlist destination to %s->%s = %s</question>"), $destmodname, $destnames[$id][1], $destnames[$id][2]));
-				$allowlist->destinationSet($destnames[$id][2]);
+				if (!$allowlist->destinationSet($destnames[$id][2])) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			} else {
 				$output->writeln(_("<question>Setting allowlist destination to None.</question>"));
 				$allowlist->astman->database_del('allowlist', 'dest');
