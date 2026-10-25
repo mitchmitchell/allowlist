@@ -25,8 +25,9 @@ namespace {
 		public $db = array();
 		public $failPut = false;
 		public $failDel = false;
+		public $failPutAfter = -1; // >= 0: allow that many more puts, then fail
 		public function connected() { return true; }
-		public function database_put($fam, $key, $val) { if ($this->failPut) { return false; } $this->db["/$fam/$key"] = (string)$val; return true; }
+		public function database_put($fam, $key, $val) { if ($this->failPut) { return false; } if ($this->failPutAfter === 0) { return false; } if ($this->failPutAfter > 0) { $this->failPutAfter--; } $this->db["/$fam/$key"] = (string)$val; return true; }
 		public function database_get($fam, $key) { return isset($this->db["/$fam/$key"]) ? $this->db["/$fam/$key"] : false; }
 		public function database_del($fam, $key) { if ($this->failDel) { return false; } $had = isset($this->db["/$fam/$key"]); unset($this->db["/$fam/$key"]); return $had; }
 		public function database_deltree($fam) { foreach (array_keys($this->db) as $k) { if (strpos($k, "/$fam/") === 0) { unset($this->db[$k]); } } return true; }

@@ -406,23 +406,55 @@ check(strpos($logged, '2025550188') === false && strpos($logged, '******0188') !
 $restore->restoreAllowlistEntries(array('dest' => 'bogus-ctx,s,1'));
 check(strpos(implode("\n", array_column($restore->logs, 1)), 'dest:') !== false, 'restore skip-log keeps setting names readable');
 
-// --- Edit paths: validate, write the new entry, then remove the old one -------
-// UI number edit
+// --- Bugbot: edit and destination writes are all-or-nothing ---------------------
 list($fp, $al) = fresh();
 $r = ajax($al, array('command' => 'edit', 'oldval' => '2025550113', 'number' => '20255501x3', 'description' => 'new'));
 check($r['status'] === false && $fp->astman->db['/allowlist/2025550113'] === 'old entry', 'edit with an invalid new number keeps the old entry');
 $fp->astman->failPut = true;
-$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+check($r['status'] === false && $r['message'] !== '' && $fp->astman->db['/allowlist/2025550113'] === 'old entry' && !isset($fp->astman->db['/allowlist/2025550114']), 'edit with failed put keeps the old entry');
 $fp->astman->failPut = false;
-check($r['status'] === false && $r['message'] !== '' && $fp->astman->db['/allowlist/2025550113'] === 'old entry' && !isset($fp->astman->db['/allowlist/2025550114']), 'edit whose write fails keeps the old entry and returns an error');
-$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
-check($r['status'] === true && !isset($fp->astman->db['/allowlist/2025550113']) && $fp->astman->db['/allowlist/2025550114'] === 'new', 'edit to a new number writes it, then removes the old one');
-$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550114', 'number' => '2025550114', 'description' => 'renamed'));
-check($r['status'] === true && $fp->astman->db['/allowlist/2025550114'] === 'renamed', 'edit of the description only keeps the entry');
 $fp->astman->failDel = true;
-$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550114', 'number' => '2025550115', 'description' => 'x'));
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
 $fp->astman->failDel = false;
-check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550115']) && isset($fp->astman->db['/allowlist/2025550114']), 'edit whose old-entry delete fails reports it and loses nothing');
+check($r['status'] === false && $r['message'] !== '' && isset($fp->astman->db['/allowlist/2025550113']), 'edit with failed delete reports failure and keeps the old entry');
+// failDel also blocks the rollback delete in this fake, so check the restore path with an existing target
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist/2025550114'] = 'target before';
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false;
+check($r['status'] === false && $fp->astman->db['/allowlist/2025550114'] === 'target before', 'edit with failed delete restores the prior value of the new key');
+// Bugbot/Claude: a failed rollback is reported, not hidden behind "nothing was changed"
+list($fp, $al) = fresh();
+$fp->astman->failDel = true; // blocks the old-key delete and the rollback delete
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false;
+check($r['status'] === false && strpos($r['message'], 'may still be') !== false && strpos($r['message'], 'nothing was changed') === false, 'edit with failed rollback delete says the new number may remain');
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist/2025550114'] = 'target before';
+$fp->astman->failDel = true;
+$fp->astman->failPutAfter = 1; // the edit put succeeds, the rollback put fails
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false; $fp->astman->failPutAfter = -1;
+check($r['status'] === false && strpos($r['message'], 'may still be') !== false, 'edit with failed rollback put says the new number may remain');
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist/2025550114'] = 'target before';
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+$fp->astman->failDel = false;
+check($r['status'] === false && strpos($r['message'], 'nothing was changed') !== false, 'edit with a successful rollback still says nothing was changed');
+list($fp, $al) = fresh();
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550113', 'description' => 'renamed'));
+check($r['status'] === true && $fp->astman->db['/allowlist/2025550113'] === 'renamed', 'edit of the description only keeps the entry');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/2025550113']) && $fp->astman->db['/allowlist/2025550114'] === 'new', 'edit to a new number writes it, then removes the old one');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550177', 'number' => '2025550115', 'description' => 'x'));
+check($r['status'] === false && !isset($fp->astman->db['/allowlist/2025550115']), 'edit of a missing old number writes nothing');
+list($fp, $al) = fresh();
+$fp->astman->failPut = true;
+check($al->destinationSet('tst-blocked,s,1') === false && $al->getLastError() !== '' && $fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1', 'destinationSet failed put keeps previous dest with a message');
+$fp->astman->failPut = false;
 
 // Route hooks (core module edit paths)
 if (!defined('FREEPBX_IS_AUTH')) { define('FREEPBX_IS_AUTH', true); }
