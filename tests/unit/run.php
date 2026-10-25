@@ -383,8 +383,33 @@ $fp->astman->failDel = true;
 check($al->numberDel('2025550199') === false && $al->getLastError() !== '', 'numberDel returns false with a message when database_del fails');
 $fp->astman->failDel = false;
 
+// --- N1: rejected route-hook settings reach the admin ------------------------
+class FakeNotifications { public $warnings = array(); public function add_warning(...$a) { $this->warnings[] = $a; return true; } }
+list($fp, $al) = fresh();
+$fp->Notifications = new FakeNotifications();
+check($al->didAdd('55/01', '') === false, 'didAdd rejects a bad DID');
+$msg = $al->reportHookRejection('inbound route');
+check(count($fp->Notifications->warnings) === 1 && $fp->Notifications->warnings[0][0] === 'allowlist' && strpos($fp->Notifications->warnings[0][3], $al->getLastError()) !== false, 'rejected didAdd raises an admin notification with the reason');
+check(strpos($msg, '55') === false, 'hook notification never contains the DID');
+list($fp, $al) = fresh();
+check($al->routeAdd('1', '0', '0') === false && is_string($al->reportHookRejection('outbound route auto-add')), 'reporting works without a Notifications module');
+$fn = file_get_contents($root . '/functions.inc.php');
+check(preg_match_all('/if \(!\$allowlist->(didAdd|routeAdd)\(/', $fn) === 4 && preg_match_all('/^\s*\$allowlist->(didAdd|routeAdd)\(/m', $fn) === 0, 'every didAdd/routeAdd hook call checks the result');
+
+// --- N2: restore skip-log masks number keys -----------------------------------
+list($fp, $al) = fresh();
+$fp->Allowlist = $al;
+$restore = new \FreePBX\modules\Allowlist\Restore($fp);
+$restore->restoreAllowlistEntries(array('2025550188' => str_repeat('a', 300)));
+$logged = implode("\n", array_column($restore->logs, 1));
+check(strpos($logged, '2025550188') === false && strpos($logged, '******0188') !== false, 'restore skip-log masks a number key to its last 4 digits');
+$restore->restoreAllowlistEntries(array('dest' => 'bogus-ctx,s,1'));
+check(strpos(implode("\n", array_column($restore->logs, 1)), 'dest:') !== false, 'restore skip-log keeps setting names readable');
+
 // --- Bugbot: edit and destination writes are all-or-nothing ---------------------
 list($fp, $al) = fresh();
+$r = ajax($al, array('command' => 'edit', 'oldval' => '2025550113', 'number' => '20255501x3', 'description' => 'new'));
+check($r['status'] === false && $fp->astman->db['/allowlist/2025550113'] === 'old entry', 'edit with an invalid new number keeps the old entry');
 $fp->astman->failPut = true;
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
 check($r['status'] === false && $r['message'] !== '' && $fp->astman->db['/allowlist/2025550113'] === 'old entry' && !isset($fp->astman->db['/allowlist/2025550114']), 'edit with failed put keeps the old entry');
@@ -422,12 +447,68 @@ check($r['status'] === false && strpos($r['message'], 'nothing was changed') !==
 list($fp, $al) = fresh();
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550113', 'description' => 'renamed'));
 check($r['status'] === true && $fp->astman->db['/allowlist/2025550113'] === 'renamed', 'edit of the description only keeps the entry');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'number' => '2025550114', 'description' => 'new'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/2025550113']) && $fp->astman->db['/allowlist/2025550114'] === 'new', 'edit to a new number writes it, then removes the old one');
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550177', 'number' => '2025550115', 'description' => 'x'));
 check($r['status'] === false && !isset($fp->astman->db['/allowlist/2025550115']), 'edit of a missing old number writes nothing');
 list($fp, $al) = fresh();
 $fp->astman->failPut = true;
 check($al->destinationSet('tst-blocked,s,1') === false && $al->getLastError() !== '' && $fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1', 'destinationSet failed put keeps previous dest with a message');
 $fp->astman->failPut = false;
+
+// Route hooks (core module edit paths)
+if (!defined('FREEPBX_IS_AUTH')) { define('FREEPBX_IS_AUTH', true); }
+if (!class_exists('FreePBX')) { eval('class FreePBX { public static $al; public static function Allowlist() { return self::$al; } }'); }
+require_once $root . '/functions.inc.php';
+list($fp, $al) = fresh();
+$fp->Notifications = new FakeNotifications();
+FreePBX::$al = $al;
+unset($fp->astman->db['/allowlist/did/5550100/']);
+$fp->astman->db['/allowlist/did/5550100'] = '1'; // the key didAdd/didDelete use for a route with no CID
+$base = array('action' => 'edtIncoming', 'extdisplay' => '5550100/', 'enable_allowlist' => 'yes', 'cidnum' => '');
+allowlist_hookProcess_core(null, $base + array('extension' => '555"0100'));
+check(isset($fp->astman->db['/allowlist/did/5550100']), 'edtIncoming with an invalid DID keeps the old setting');
+check(count($fp->Notifications->warnings) === 1, 'edtIncoming with an invalid DID reports one error');
+$fp->astman->failPut = true;
+allowlist_hookProcess_core(null, $base + array('extension' => '5550102'));
+$fp->astman->failPut = false;
+check(isset($fp->astman->db['/allowlist/did/5550100']) && !isset($fp->astman->db['/allowlist/did/5550102']) && count($fp->Notifications->warnings) === 2, 'edtIncoming whose write fails keeps the old setting and reports it');
+allowlist_hookProcess_core(null, $base + array('extension' => '5550102'));
+check(!isset($fp->astman->db['/allowlist/did/5550100']) && isset($fp->astman->db['/allowlist/did/5550102']) && count($fp->Notifications->warnings) === 2, 'edtIncoming with a valid DID writes the new setting, then removes the old one');
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550102/', 'enable_allowlist' => 'no', 'extension' => '5550102', 'cidnum' => ''));
+check(!isset($fp->astman->db['/allowlist/did/5550102']), 'edtIncoming with allowlist turned off removes the setting');
+$rt = array('action' => 'editroute', 'id' => '1', 'autoadd_allowlist' => 'yes', 'remcount' => '0');
+allowlist_hookProcess_core(null, $rt + array('stocount' => '3'));
+check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,99' && count($fp->Notifications->warnings) === 3, 'editroute with an invalid count keeps the old auto-add setting and reports it');
+$fp->astman->failPut = true;
+allowlist_hookProcess_core(null, $rt + array('stocount' => '10'));
+$fp->astman->failPut = false;
+check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,99' && count($fp->Notifications->warnings) === 4, 'editroute whose write fails keeps the old setting and reports it');
+allowlist_hookProcess_core(null, $rt + array('stocount' => '10'));
+check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,10', 'editroute with valid counts updates the setting');
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '1', 'autoadd_allowlist' => 'no'));
+check(!isset($fp->astman->db['/allowlist/autoadd/1']), 'editroute with auto-add turned off removes the setting');
+
+// --- Restore skip-log masks did/<DID>/<CID> keys ------------------------------
+list($fp, $al) = fresh();
+$fp->Allowlist = $al;
+$restore = new \FreePBX\modules\Allowlist\Restore($fp);
+$restore->restoreAllowlistEntries(array('did/15551230000/15559870000' => "bad\nvalue"));
+$logged = implode("\n", array_column($restore->logs, 1));
+check(strpos($logged, 'did/') !== false && substr_count($logged, '*******0000') === 2 && !preg_match('/\d{5,}/', $logged), 'restore skip-log masks did/<DID>/<CID> keys to the last 4 digits of each number');
+
+// --- D1: editing a legacy non-numeric entry to a valid number removes it -------
+list($fp, $al) = fresh();
+$fp->astman->failPut = true;
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'sipuser', 'number' => '2025550120', 'description' => 'x'));
+$fp->astman->failPut = false;
+check($r['status'] === false && $fp->astman->db['/allowlist/sipuser'] === 'legacy', 'legacy edit whose write fails keeps the legacy entry');
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'sipuser', 'number' => 'not-a-number', 'description' => 'x'));
+check($r['status'] === false && $fp->astman->db['/allowlist/sipuser'] === 'legacy', 'legacy edit to an invalid number keeps the legacy entry');
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'sipuser', 'number' => '2025550120', 'description' => 'x'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/sipuser']) && isset($fp->astman->db['/allowlist/2025550120']), 'legacy edit to a valid number saves it, then removes the legacy key');
+$r = ajax($al, array('command' => 'edit', 'oldval' => 'dest', 'number' => '2025550121', 'description' => 'x'));
+check(isset($fp->astman->db['/allowlist/dest']), 'edit never removes a settings key named as oldval');
 
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);
