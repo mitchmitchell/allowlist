@@ -511,7 +511,6 @@ check($r['status'] === true && !isset($fp->astman->db['/allowlist/sipuser']) && 
 $r = ajax($al, array('command' => 'edit', 'oldval' => 'dest', 'number' => '2025550121', 'description' => 'x'));
 check(isset($fp->astman->db['/allowlist/dest']), 'edit never removes a settings key named as oldval');
 
-// --- PR-A: multiple allowlists (data layer only) ---------------------------
 foreach (array('1' => 1, '42' => 42, '9999' => 9999) as $raw => $want) {
 	check(Allowlist::parseListIdValue($raw) === $want, 'parseListIdValue accepts ' . $raw);
 	check(Allowlist::parseDidMappingValue($raw) === $want, 'parseDidMappingValue accepts ' . $raw);
