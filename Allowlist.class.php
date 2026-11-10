@@ -1528,7 +1528,7 @@ class Allowlist implements BMO
                 if (self::parseDidMappingValue($v) === false)
                 {
                     $bad[] = $rel;
-                    $this->auditLog('Allowlist upgrade: unparseable inbound-route mapping at ' . $rel);
+                    $this->auditLog('Allowlist upgrade: unparseable inbound-route mapping at ' . $this->maskDidMappingKeyForAudit($rel));
                 }
             }
             elseif (strpos($rel, 'autoadd/') === 0)
@@ -1541,6 +1541,36 @@ class Allowlist implements BMO
             }
         }
         return $bad;
+    }
+
+    /**
+     * @param  string $rel AstDB key relative to allowlist/ (did/...)
+     * @return string Same key with DID/CID number segments masked for audit output
+     */
+    private function maskDidMappingKeyForAudit($rel)
+    {
+        if (strpos($rel, 'did/') !== 0)
+        {
+            return $rel;
+        }
+        if (!function_exists('allowlistMask'))
+        {
+            require_once __DIR__ . '/agi-bin/allowlist-common.php';
+        }
+        $rest = substr($rel, 4);
+        $slash = strpos($rest, '/');
+        if ($slash === false)
+        {
+            return 'did/' . allowlistMask($rest, false);
+        }
+        $did = substr($rest, 0, $slash);
+        $cid = substr($rest, $slash + 1);
+        $masked = 'did/' . allowlistMask($did, false);
+        if ($cid !== '')
+        {
+            $masked .= '/' . allowlistMask($cid, false);
+        }
+        return $masked;
     }
 
     public function listExists($listId)

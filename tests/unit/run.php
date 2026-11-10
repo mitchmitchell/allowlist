@@ -535,6 +535,12 @@ $fp->astman->db['/allowlist/autoadd/9'] = '2,0,99';
 $bad = $al->scanUnparseableAllowlistMappings();
 check(count($bad) === 2, 'upgrade scan logs unparseable did and autoadd keys');
 check($fp->astman->db['/allowlist/did/5550199/'] === 'yes', 'upgrade scan does not rewrite bad values');
+list($fp, $al) = fresh();
+$al->auditEntries = array();
+$fp->astman->db['/allowlist/did/15551230000/15559870000'] = 'not-valid';
+$al->scanUnparseableAllowlistMappings();
+$logged = implode("\n", $al->auditEntries);
+check(strpos($logged, '15551230000') === false && strpos($logged, '15559870000') === false && substr_count($logged, '*******0000') >= 1, 'upgrade scan audit masks did route numbers');
 
 list($fp, $al) = fresh();
 $id2 = $al->listCreate('Sales');
