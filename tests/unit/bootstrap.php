@@ -23,8 +23,12 @@ namespace {
 	}
 	class FakeExt {
 		public $lines = array();
+		public $splices = array();
 		public function add($ctx, $exten, $label, $obj) { $this->lines[] = array('ctx' => $ctx, 'exten' => $exten, 'label' => $label, 'app' => get_class($obj), 'args' => $obj->args); }
 		public function addInclude($a, $b) {}
+		public function splice($ctx, $exten, $pos, $obj, $label = '', $prio = 1) {
+			$this->splices[] = array('ctx' => $ctx, 'exten' => $exten, 'pos' => $pos, 'label' => $label, 'app' => get_class($obj), 'args' => $obj->args, 'prio' => $prio);
+		}
 	}
 	class FakeAstman {
 		public $db = array();
