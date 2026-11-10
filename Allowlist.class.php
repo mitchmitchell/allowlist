@@ -1971,6 +1971,11 @@ class Allowlist implements BMO
      */
     public function dialplanScreenListId($did, $cid)
     {
+        if (!$this->astman->connected())
+        {
+            $this->auditLog('Allowlist dialplan: inbound route screening skipped (Asterisk Manager not connected)');
+            return false;
+        }
         $listId = $this->didGetListId($did, $cid);
         if ($listId === false)
         {

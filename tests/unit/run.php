@@ -630,8 +630,8 @@ check(strpos(implode("\n", $al->auditEntries), '5550300') === false, 'missing-li
 
 list($fp, $al) = fresh();
 foreach (array('0', '-1', '1;Hangup') as $bad) {
-	$fp->astman->db['/allowlist/did/5550301/'] = $bad;
-	check($al->dialplanScreenListId('5550301', '') === false, 'dialplan rejects stored list id ' . json_encode($bad));
+	$fp->astman->db['/allowlist/did/5550301'] = $bad;
+	check($al->didGetListId('5550301', '') === false && $al->dialplanScreenListId('5550301', '') === false, 'dialplan rejects stored list id ' . json_encode($bad));
 }
 
 class RecAutoaddAGI {
@@ -707,12 +707,29 @@ $gosubs = array_values(array_filter($ext->splices, function ($s) { return $s['ap
 check(count($gosubs) === 1 && $gosubs[0]['args'][0] === '1(2)', 'named-list route passes list id in Gosub arg');
 list($fp, $al) = fresh();
 $al->auditEntries = array();
-$fp->astman->db['/allowlist/did/5550401/'] = '88';
+$fp->astman->db['/allowlist/did/5550401'] = '88';
 FreePBX::$al = $al;
 $unit_core_did_list = array(array('extension' => '5550401', 'cidnum' => '', 'pricid' => false));
 $ext = new FakeExt();
 allowlist_hookGet_config('asterisk');
 check(count(array_filter($ext->splices, function ($s) { return $s['app'] === 'ext_gosub'; })) === 0, 'route with missing list id produces no screening Gosub');
+check(strpos(implode("\n", $al->auditEntries), 'unscreened') !== false && strpos(implode("\n", $al->auditEntries), '5550401') === false, 'hookGet_config missing-list audit proves mapping was read');
+
+list($fp, $al) = fresh();
+$al->auditEntries = array();
+$fp->astman->connectedState = false;
+$fp->astman->db['/allowlist/did/5550500'] = '1';
+FreePBX::$al = $al;
+$unit_core_did_list = array(array('extension' => '5550500', 'cidnum' => '', 'pricid' => false));
+$ext = new FakeExt();
+$hookThrew = false;
+try {
+	allowlist_hookGet_config('asterisk');
+} catch (\Throwable $e) {
+	$hookThrew = true;
+}
+check(!$hookThrew && count(array_filter($ext->splices, function ($s) { return $s['app'] === 'ext_gosub'; })) === 0, 'hookGet_config without AMI does not throw and emits no screening Gosub');
+check(strpos(implode("\n", $al->auditEntries), 'Asterisk Manager not connected') !== false && strpos(implode("\n", $al->auditEntries), '5550500') === false, 'AMI-down dialplan audit has no route numbers');
 
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

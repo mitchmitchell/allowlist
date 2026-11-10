@@ -7,8 +7,7 @@
     "/allowlist/did//15559870000": "1",
     "/allowlist/did/15551230000/15559870000": "1",
     "/allowlist/autoadd/1": "1,0,99",
-    "/allowlist/2025550111": "Alice",
-    "/allowlist-lists/1": "Default"
+    "/allowlist/2025550111": "Alice"
   },
   "dids": [
     {"extension": "5550100", "cidnum": "", "pricid": false},
