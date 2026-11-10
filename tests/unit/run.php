@@ -24,6 +24,7 @@ function fresh() {
 		'/allowlist/autoadd/1' => '1,0,99',
 		'/allowlist/2025550113' => 'old entry',
 		'/allowlist/sipuser' => 'legacy',
+		'/allowlist-lists/1' => 'Default',
 	);
 	return array($fp, new Allowlist($fp));
 }
@@ -509,6 +510,68 @@ $r = ajax($al, array('command' => 'edit', 'oldval' => 'sipuser', 'number' => '20
 check($r['status'] === true && !isset($fp->astman->db['/allowlist/sipuser']) && isset($fp->astman->db['/allowlist/2025550120']), 'legacy edit to a valid number saves it, then removes the legacy key');
 $r = ajax($al, array('command' => 'edit', 'oldval' => 'dest', 'number' => '2025550121', 'description' => 'x'));
 check(isset($fp->astman->db['/allowlist/dest']), 'edit never removes a settings key named as oldval');
+
+// --- PR-A: multiple allowlists (data layer only) ---------------------------
+foreach (array('1' => 1, '42' => 42, '9999' => 9999) as $raw => $want) {
+	check(Allowlist::parseListIdValue($raw) === $want, 'parseListIdValue accepts ' . $raw);
+	check(Allowlist::parseDidMappingValue($raw) === $want, 'parseDidMappingValue accepts ' . $raw);
+}
+foreach (array('0', '-1', '1;Hangup', '2/../x', '10000', '', 'abc') as $bad) {
+	check(Allowlist::parseListIdValue($bad) === false, 'parseListIdValue rejects ' . json_encode($bad));
+	check(Allowlist::parseDidMappingValue($bad) === false, 'parseDidMappingValue rejects ' . json_encode($bad));
+}
+check(Allowlist::parseAutoaddMappingValue('1,0,99')['listId'] === 1, 'autoadd parse defaults list id to 1');
+check(Allowlist::parseAutoaddMappingValue('1,1,10,3') === array('rem' => 1, 'sto' => 10, 'listId' => 3), 'autoadd parse reads list id');
+check(Allowlist::formatAutoaddMappingValue(0, 99) === '1,0,99', 'autoadd format omits default list id');
+check(Allowlist::formatAutoaddMappingValue(0, 99, 2) === '1,0,99,2', 'autoadd format includes named list id');
+list($fp, $al) = fresh();
+unset($fp->astman->db['/allowlist-lists/1']);
+check($al->upgradeAllowlistDataModel() === true && ($fp->astman->db['/allowlist-lists/1'] ?? null) === 'Default', 'upgrade writes Default list metadata once');
+$dbAfterFirst = $fp->astman->db;
+check($al->upgradeAllowlistDataModel() === true && $fp->astman->db === $dbAfterFirst, 'upgrade is idempotent');
+$fp->astman->db['/allowlist/did/5550199/'] = 'yes';
+$fp->astman->db['/allowlist/autoadd/9'] = '2,0,99';
+$bad = $al->scanUnparseableAllowlistMappings();
+check(count($bad) === 2, 'upgrade scan logs unparseable did and autoadd keys');
+check($fp->astman->db['/allowlist/did/5550199/'] === 'yes', 'upgrade scan does not rewrite bad values');
+
+list($fp, $al) = fresh();
+$id2 = $al->listCreate('Sales');
+check($id2 === 2 && $al->listGetName(2) === 'Sales', 'listCreate stores named list');
+check($al->listMemberAdd(2, array('number' => '2025550200', 'description' => 'Bob')) === true && isset($fp->astman->db['/allowlist-list/2/2025550200']), 'named list member stored under allowlist-list');
+check($al->listMemberAdd(1, array('number' => '2025550201')) === true && isset($fp->astman->db['/allowlist/2025550201']), 'list 1 members stay under allowlist');
+check(Allowlist::formatListNameForDisplay('<b>x</b>') === '&lt;b&gt;x&lt;/b&gt;', 'list name htmlentities on output helper');
+check(Allowlist::normalizeListName("a\n") === false && $al->listCreate('a/b') === false, 'list name rejects CR/LF and slash');
+
+list($fp, $al) = fresh();
+check($al->listDelete(1) === false && strpos($al->getLastError(), 'default') !== false, 'listDelete refuses list 1');
+$id2 = $al->listCreate('Assigned');
+$al->didAdd('5550202', '', 2);
+check($al->listDelete(2) === false && strpos($al->getLastError(), '5550202') !== false, 'listDelete refuses assigned inbound route');
+$al->didDelete('5550202', '');
+$al->routeAdd(5, '0', '10', 2);
+check($al->listDelete(2) === false && strpos($al->getLastError(), '5') !== false, 'listDelete refuses assigned outbound route');
+$al->routeDelete(5);
+check($al->listDelete(2) === true && !isset($fp->astman->db['/allowlist-lists/2']), 'listDelete removes metadata when unassigned');
+
+list($fp, $al) = fresh();
+foreach (array('0', '-1', '1;Hangup', '2/../x', 99) as $bad) {
+	check($al->didAdd('5550203', '', $bad) === false, 'didAdd rejects list id ' . json_encode($bad));
+}
+check($al->didAdd('5550203', '', 99) === false, 'didAdd rejects nonexistent list id');
+$al->listCreate('Target');
+check($al->didAdd('5550203', '', 2) === true && $fp->astman->db['/allowlist/did/5550203'] === '2', 'didAdd stores one list id per route');
+check($al->didAdd('5550203', '', 2) === true && $fp->astman->db['/allowlist/did/5550203'] === '2', 'didAdd replace never appends');
+check($al->didGetListId('5550203', '') === 2, 'didGetListId reads stored mapping');
+
+list($fp, $al) = fresh();
+check($al->routeAdd(3, '0', '10', '0') === false, 'routeAdd rejects list id 0');
+$al->listCreate('Outbound');
+check($al->routeAdd(3, '0', '10', 2) === true && $fp->astman->db['/allowlist/autoadd/3'] === '1,0,10,2', 'routeAdd stores optional list id');
+check($al->routeGetListId(3) === 2 && $al->routeRemCount(3) === '0' && $al->routeStoCount(3) === '10', 'route getters parse four-field autoadd value');
+$al->routeAdd(3, '1', '11', 1);
+check($fp->astman->db['/allowlist/autoadd/3'] === '1,1,11', 'routeAdd replace drops prior value');
+check(substr_count($fp->astman->db['/allowlist/autoadd/3'], ',') === 2, 'route setter never stores two autoadd records');
 
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

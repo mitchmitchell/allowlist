@@ -26,6 +26,12 @@ class Allowlist implements BMO
     /** Dialplan form of NUMBER_PATTERN; [+] keeps backslashes out of extensions_additional.conf. */
     const DIALPLAN_NUMBER_REGEX = '^[+]?[0-9]{1,20}$';
     const DESCRIPTION_MAX = 255;
+    const LIST_ID_PATTERN = '/^[0-9]{1,4}$/D';
+    const LIST_NAME_MAX = 64;
+    const LIST_MAX = 100;
+    const DEFAULT_LIST_ID = 1;
+    const DEFAULT_LIST_NAME = 'Default';
+    const AUTOADD_VALUE_PATTERN = '/^1,[0-9]{1,6},[0-9]{1,6}(,[0-9]{1,4})?$/D';
 
     private $lastError = '';
 
@@ -81,6 +87,110 @@ class Allowlist implements BMO
             return false;
         }
         return $d;
+    }
+
+    /**
+     * @param  mixed $raw Candidate list id
+     * @return int|false Parsed id (1..9999), or false
+     */
+    public static function parseListIdValue($raw)
+    {
+        if (is_int($raw))
+        {
+            $s = (string)$raw;
+        }
+        elseif (is_string($raw))
+        {
+            $s = $raw;
+        }
+        else
+        {
+            return false;
+        }
+        if (!preg_match(self::LIST_ID_PATTERN, $s))
+        {
+            return false;
+        }
+        $id = (int)$s;
+        return $id >= 1 ? $id : false;
+    }
+
+    /**
+     * @param  mixed $name Candidate list name (before storage)
+     * @return string|false Normalized name, or false
+     */
+    public static function normalizeListName($name)
+    {
+        if (!is_string($name) || !preg_match('//u', $name))
+        {
+            return false;
+        }
+        $len = function_exists('mb_strlen') ? mb_strlen($name, 'UTF-8') : preg_match_all('/./us', $name);
+        if ($len < 1 || $len > self::LIST_NAME_MAX || preg_match('/[\x00-\x1F\x7F]/', $name) || strpos($name, '/') !== false)
+        {
+            return false;
+        }
+        return $name;
+    }
+
+    public static function formatListNameForDisplay($name)
+    {
+        return htmlentities((string)$name, ENT_COMPAT | ENT_HTML401, 'UTF-8');
+    }
+
+    /**
+     * @return int|false List id from a did/ value, or false
+     */
+    public static function parseDidMappingValue($value)
+    {
+        if (!is_scalar($value))
+        {
+            return false;
+        }
+        return self::parseListIdValue((string)$value);
+    }
+
+    public static function formatDidMappingValue($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        return $id === false ? false : (string)$id;
+    }
+
+    /**
+     * @return array{rem:int,sto:int,listId:int}|false
+     */
+    public static function parseAutoaddMappingValue($value)
+    {
+        if (!is_string($value) || !preg_match(self::AUTOADD_VALUE_PATTERN, $value))
+        {
+            return false;
+        }
+        $parts = explode(',', $value);
+        if ((int)$parts[0] !== 1)
+        {
+            return false;
+        }
+        $listId = count($parts) > 3 ? self::parseListIdValue($parts[3]) : self::DEFAULT_LIST_ID;
+        if ($listId === false)
+        {
+            return false;
+        }
+        return array(
+            'rem' => (int)$parts[1],
+            'sto' => (int)$parts[2],
+            'listId' => $listId,
+        );
+    }
+
+    public static function formatAutoaddMappingValue($rem, $sto, $listId = self::DEFAULT_LIST_ID)
+    {
+        $listId = self::parseListIdValue($listId);
+        if ($listId === false)
+        {
+            return false;
+        }
+        $base = '1,' . (int)$rem . ',' . (int)$sto;
+        return $listId === self::DEFAULT_LIST_ID ? $base : $base . ',' . $listId;
     }
 
     /**
@@ -382,6 +492,8 @@ class Allowlist implements BMO
         $fcc->setProvideDest(true);
         $fcc->update();
         unset($fcc);
+
+        $this->upgradeAllowlistDataModel();
     }
     public function uninstall()
     {
@@ -1359,6 +1471,360 @@ class Allowlist implements BMO
         return $data;
     }
 
+    public function upgradeAllowlistDataModel()
+    {
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $existing = $this->astman->database_get('allowlist-lists', (string)self::DEFAULT_LIST_ID);
+        if ($existing === false || $existing === '')
+        {
+            $this->astman->database_put('allowlist-lists', (string)self::DEFAULT_LIST_ID, self::DEFAULT_LIST_NAME);
+        }
+        $this->scanUnparseableAllowlistMappings();
+        return true;
+    }
+
+    /**
+     * @return string[] Unparseable mapping keys (values are logged, not rewritten)
+     */
+    public function scanUnparseableAllowlistMappings()
+    {
+        $bad = array();
+        foreach ($this->astman->database_show('allowlist') as $k => $v)
+        {
+            if (strpos($k, '/allowlist/') !== 0)
+            {
+                continue;
+            }
+            $rel = substr($k, strlen('/allowlist/'));
+            if (strpos($rel, 'did/') === 0)
+            {
+                if (self::parseDidMappingValue($v) === false)
+                {
+                    $bad[] = $rel;
+                    $this->auditLog('Allowlist upgrade: unparseable inbound-route mapping at ' . $rel);
+                }
+            }
+            elseif (strpos($rel, 'autoadd/') === 0)
+            {
+                if (self::parseAutoaddMappingValue((string)$v) === false)
+                {
+                    $bad[] = $rel;
+                    $this->auditLog('Allowlist upgrade: unparseable outbound-route auto-add mapping at ' . $rel);
+                }
+            }
+        }
+        return $bad;
+    }
+
+    public function listExists($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false || !$this->astman->connected())
+        {
+            return false;
+        }
+        $name = $this->astman->database_get('allowlist-lists', (string)$id);
+        return $name !== false && $name !== '';
+    }
+
+    /**
+     * @return array<int, string> Raw list id => name
+     */
+    public function listGetAll()
+    {
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $out = array();
+        foreach ($this->astman->database_show('allowlist-lists') as $k => $v)
+        {
+            if (strpos($k, '/allowlist-lists/') !== 0)
+            {
+                continue;
+            }
+            $id = substr($k, strlen('/allowlist-lists/'));
+            $parsed = self::parseListIdValue($id);
+            if ($parsed !== false)
+            {
+                $out[$parsed] = (string)$v;
+            }
+        }
+        ksort($out, SORT_NUMERIC);
+        return $out;
+    }
+
+    public function listGetName($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false || !$this->astman->connected())
+        {
+            return false;
+        }
+        $name = $this->astman->database_get('allowlist-lists', (string)$id);
+        return ($name === false || $name === '') ? false : (string)$name;
+    }
+
+    public function listCreate($name)
+    {
+        $this->lastError = '';
+        $name = self::normalizeListName($name);
+        if ($name === false)
+        {
+            $this->lastError = sprintf(_('Invalid allowlist name: 1 to %d characters, no control characters or slashes.'), self::LIST_NAME_MAX);
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $lists = $this->listGetAll();
+        if (count($lists) >= self::LIST_MAX)
+        {
+            $this->lastError = sprintf(_('At most %d allowlists are supported.'), self::LIST_MAX);
+            return false;
+        }
+        $next = $this->nextAvailableListId($lists);
+        if ($next === false)
+        {
+            $this->lastError = _('No allowlist id is available.');
+            return false;
+        }
+        if (!$this->astman->database_put('allowlist-lists', (string)$next, $name))
+        {
+            $this->lastError = _('Could not save the allowlist: the Asterisk database rejected the write.');
+            return false;
+        }
+        return $next;
+    }
+
+    public function listRename($listId, $name)
+    {
+        $this->lastError = '';
+        $id = self::parseListIdValue($listId);
+        $name = self::normalizeListName($name);
+        if ($id === false || $name === false)
+        {
+            $this->lastError = _('Invalid allowlist id or name.');
+            return false;
+        }
+        if (!$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        if (!$this->astman->database_put('allowlist-lists', (string)$id, $name))
+        {
+            $this->lastError = _('Could not save the allowlist name: the Asterisk database rejected the write.');
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @return array{inbound:string[],outbound:string[]}
+     */
+    public function listRoutesUsingList($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        $inbound = array();
+        $outbound = array();
+        if ($id === false)
+        {
+            return array('inbound' => $inbound, 'outbound' => $outbound);
+        }
+        foreach ($this->astman->database_show('allowlist') as $k => $v)
+        {
+            if (strpos($k, '/allowlist/') !== 0)
+            {
+                continue;
+            }
+            $rel = substr($k, strlen('/allowlist/'));
+            if (strpos($rel, 'did/') === 0)
+            {
+                $mapped = self::parseDidMappingValue($v);
+                if ($mapped === $id)
+                {
+                    $inbound[] = substr($rel, 4);
+                }
+            }
+            elseif (strpos($rel, 'autoadd/') === 0)
+            {
+                $parsed = self::parseAutoaddMappingValue((string)$v);
+                if (is_array($parsed) && $parsed['listId'] === $id)
+                {
+                    $outbound[] = substr($rel, 8);
+                }
+            }
+        }
+        sort($inbound, SORT_STRING);
+        sort($outbound, SORT_STRING);
+        return array('inbound' => $inbound, 'outbound' => $outbound);
+    }
+
+    public function listDelete($listId)
+    {
+        $this->lastError = '';
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            $this->lastError = _('Invalid allowlist id.');
+            return false;
+        }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            $this->lastError = _('The default allowlist cannot be deleted.');
+            return false;
+        }
+        if (!$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        $uses = $this->listRoutesUsingList($id);
+        if (!empty($uses['inbound']) || !empty($uses['outbound']))
+        {
+            $parts = array();
+            if (!empty($uses['inbound']))
+            {
+                $parts[] = sprintf(_('inbound %s'), implode(', ', $uses['inbound']));
+            }
+            if (!empty($uses['outbound']))
+            {
+                $parts[] = sprintf(_('outbound route id %s'), implode(', ', $uses['outbound']));
+            }
+            $this->lastError = sprintf(_('This allowlist is still assigned (%s). Remove those assignments first.'), implode('; ', $parts));
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        foreach (array_keys($this->astman->database_show('allowlist-list')) as $k)
+        {
+            if (strpos($k, '/allowlist-list/' . $id . '/') === 0)
+            {
+                $member = substr($k, strlen('/allowlist-list/' . $id . '/'));
+                $this->astman->database_del('allowlist-list', $id . '/' . $member);
+            }
+        }
+        if (!$this->astman->database_del('allowlist-lists', (string)$id))
+        {
+            $this->lastError = _('Could not delete the allowlist: the Asterisk database rejected the delete.');
+            return false;
+        }
+        return true;
+    }
+
+    public function listMemberAdd($listId, $post)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false || !$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            return $this->numberAdd($post);
+        }
+        $entry = $this->checkEntry($post);
+        if (!$entry)
+        {
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $description = $entry['description'] === '' ? '1' : $entry['description'];
+        $key = $id . '/' . $entry['number'];
+        if (!$this->astman->database_put('allowlist-list', $key, htmlentities($description, ENT_COMPAT | ENT_HTML401, 'UTF-8')))
+        {
+            $this->lastError = _('Could not save the number: the Asterisk database rejected the write.');
+            return false;
+        }
+        return true;
+    }
+
+    public function listMemberDel($listId, $number)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false || !$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            return $this->numberDel($number);
+        }
+        $n = self::normalizeNumber($number);
+        if ($n === false)
+        {
+            $this->lastError = _('Invalid number.');
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        return $this->astman->database_del('allowlist-list', $id . '/' . $n);
+    }
+
+    /**
+     * @return array<int, array{number:string,description:string}>
+     */
+    public function listMemberGetAll($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false || !$this->listExists($id))
+        {
+            return array();
+        }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            return $this->getAllowlist();
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $prefix = '/allowlist-list/' . $id . '/';
+        $rows = array();
+        foreach ($this->astman->database_show('allowlist-list') as $k => $v)
+        {
+            if (strpos($k, $prefix) !== 0)
+            {
+                continue;
+            }
+            $rows[] = array(
+                'number' => substr($k, strlen($prefix)),
+                'description' => (string)$v,
+            );
+        }
+        return $rows;
+    }
+
+    private function nextAvailableListId($lists)
+    {
+        for ($i = 2; $i <= 9999; $i++)
+        {
+            if (!isset($lists[$i]))
+            {
+                return $i;
+            }
+        }
+        return false;
+    }
+
     /**
      * L8: DID and CID values allowed in did/ keys. Either may be empty (FreePBX's
      * any-DID / any-CID route) or use the inbound-route pattern charset (digits, +,
@@ -1373,7 +1839,7 @@ class Allowlist implements BMO
         return $ok($did) && $ok($cid);
     }
 
-    public function didAdd($did, $cid)
+    public function didAdd($did, $cid, $listId = self::DEFAULT_LIST_ID)
     {
         $this->lastError = '';
         if (!self::validDidCid($did, $cid))
@@ -1382,11 +1848,17 @@ class Allowlist implements BMO
             $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid DID/CID');
             return false;
         }
+        $stored = self::formatDidMappingValue($listId);
+        if ($stored === false || !$this->listExists($stored))
+        {
+            $this->lastError = _('Invalid allowlist id for this inbound route.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+            return false;
+        }
         if ($this->astman->connected())
         {
-            // Add in did/cid pair
             $exten = $did . ($cid == "" ? "" : '/' . $cid);
-            if (!$this->astman->database_put('allowlist', 'did/' . $exten, true))
+            if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
             {
                 $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
                 return false;
@@ -1397,6 +1869,21 @@ class Allowlist implements BMO
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
+    }
+
+    public function didGetListId($did, $cid)
+    {
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $exten = $did . ($cid == "" ? "" : '/' . $cid);
+        $var = $this->astman->database_get('allowlist', 'did/' . $exten);
+        if ($var === false || $var === '')
+        {
+            return false;
+        }
+        return self::parseDidMappingValue($var);
     }
 
     public function didDelete($did, $cid)
@@ -1434,7 +1921,7 @@ class Allowlist implements BMO
         }
     }
 
-    public function routeAdd($id,$ld,$sd)
+    public function routeAdd($id, $ld, $sd, $listId = self::DEFAULT_LIST_ID)
     {
         $this->lastError = '';
         $int = function ($v) { return is_int($v) || (is_string($v) && preg_match('/^[0-9]{1,6}$/D', $v)); };
@@ -1444,9 +1931,16 @@ class Allowlist implements BMO
             $this->auditLog('Allowlist: rejected an outbound-route auto-add setting (invalid counts)');
             return false;
         }
+        $stored = self::formatAutoaddMappingValue((int)$ld, (int)$sd, $listId);
+        if ($stored === false || !$this->listExists(self::parseListIdValue($listId)))
+        {
+            $this->lastError = _('Invalid allowlist id for this outbound route.');
+            $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
+            return false;
+        }
         if ($this->astman->connected())
         {
-            if (!$this->astman->database_put('allowlist', 'autoadd/' . (int)$id, '1,' . (int)$ld . ',' . (int)$sd))
+            if (!$this->astman->database_put('allowlist', 'autoadd/' . (int)$id, $stored))
             {
                 $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
                 return false;
@@ -1496,14 +1990,8 @@ class Allowlist implements BMO
         if ($this->astman->connected())
         {
             $var = $this->astman->database_get('allowlist', 'autoadd/' . $id);
-            if (($var) && (str_contains($var, ",")) && (count(explode(",",$var)) > 1))
-            {
-                return explode(",",$var)[1];
-            }
-            else
-            {
-                return null;
-            }
+            $parsed = is_string($var) ? self::parseAutoaddMappingValue($var) : false;
+            return is_array($parsed) ? (string)$parsed['rem'] : null;
         }
         else
         {
@@ -1516,19 +2004,28 @@ class Allowlist implements BMO
         if ($this->astman->connected())
         {
             $var = $this->astman->database_get('allowlist', 'autoadd/' . $id);
-            if (($var) && (str_contains($var, ",")) && (count(explode(",",$var)) > 2))
-            {
-                return explode(",",$var)[2];
-            }
-            else
-            {
-                return null;
-            }
+            $parsed = is_string($var) ? self::parseAutoaddMappingValue($var) : false;
+            return is_array($parsed) ? (string)$parsed['sto'] : null;
         }
         else
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
+    }
+
+    public function routeGetListId($id)
+    {
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $var = $this->astman->database_get('allowlist', 'autoadd/' . $id);
+        if (!is_string($var))
+        {
+            return false;
+        }
+        $parsed = self::parseAutoaddMappingValue($var);
+        return is_array($parsed) ? $parsed['listId'] : false;
     }
 
 }
