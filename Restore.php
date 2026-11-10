@@ -77,7 +77,8 @@ class Restore Extends Base\RestoreBase{
 	/**
 	 * Value checks for restored settings (M4). Returns a reason to skip, or null.
 	 * pause: numeric epoch no later than now + 24 h (0 = not paused).
-	 * autoadd/*: "1,<int>,<int>". pausepin: 4-12 digits. knowncallers: '' or '1'.
+	 * autoadd/*: "1,<int>,<int>[,<allowlist id>]" (optional fourth field).
+	 * did/*: allowlist list id (1-4 digits). pausepin: 4-12 digits. knowncallers: '' or '1'.
 	 */
 	public function settingRejectReason($allowlist, $key, $value){
 		if($key === 'dest'){
@@ -100,7 +101,13 @@ class Restore Extends Base\RestoreBase{
 			return preg_match('/^[0-9]{4,12}$/', $value) ? null : _('pause PIN must be 4 to 12 digits');
 		}
 		if(strpos($key, 'autoadd/') === 0){
-			return preg_match('/^1,[0-9]{1,6},[0-9]{1,6}$/', $value) ? null : _('autoadd value must be 1,<int>,<int>');
+			if(\FreePBX\modules\Allowlist::parseAutoaddMappingValue($value) === false){
+				return _('autoadd value must be 1,<int>,<int>[,<allowlist id>]');
+			}
+			return null;
+		}
+		if(strpos($key, 'did/') === 0){
+			return \FreePBX\modules\Allowlist::parseDidMappingValue($value) === false ? _('did value must be a valid allowlist id') : null;
 		}
 		return null;
 	}
