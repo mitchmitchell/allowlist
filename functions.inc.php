@@ -190,7 +190,8 @@ function allowlist_hookGet_config($engine) {
                     $exten = trim($item['extension']);
                     $cidnum = trim($item['cidnum']);
 
-                    if (allowlist_did_get($exten . "/" . $cidnum)) {
+                    $screenListId = allowlist_inbound_screen_list_id($exten, $cidnum);
+                    if ($screenListId !== false) {
 
                         if ($cidnum != '' && $exten == '') {
                             $exten = 's';
@@ -210,7 +211,7 @@ function allowlist_hookGet_config($engine) {
 
                         $exten = $exten.(empty($cidnum)?"":"/".$cidnum); //if a CID num is defined, add it
                         $ext->splice($context, $exten, 'callerid', new ext_set('alreturnhere', '1'),"allowchecks",1);
-                        $ext->splice($context, $exten, 'allowchecks', new ext_gosub('1', 's', 'app-allowlist-check'),"",1);
+                        $ext->splice($context, $exten, 'allowchecks', new ext_gosub('1', 's', 'app-allowlist-check', (int)$screenListId),"",1);
                         $ext->splice($context, $exten, 'allowchecks', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'),"",2);
 
                         //$ext->splice($context, $exten, 'did-cid-hook', new ext_set('alreturnhere', '1'),"",1);
@@ -241,6 +242,10 @@ function allowlist_did_get($did) {
             return FreePBX::Allowlist()->didIsSet($extarray[0],$extarray[1]);
     }
     return false;
+}
+
+function allowlist_inbound_screen_list_id($did, $cid) {
+    return FreePBX::Allowlist()->dialplanScreenListId($did, $cid);
 }
 
 function allowlist_route_get($route_id) {

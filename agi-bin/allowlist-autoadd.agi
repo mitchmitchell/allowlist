@@ -53,6 +53,10 @@ $route_details =  explode (",", $route_details_arr['data']);
 
 $digit_remcount = (int)trim($route_details[1]);
 $digit_stocount = (int)trim($route_details[2]);
+$target_list_id = allowlistResolveAutoaddTargetList($route_id, $route_details_arr['data']);
+if ($target_list_id === false) {
+	exit;
+}
 
 $AGI->verbose("\$digit_remcount = \"$digit_remcount\"");
 $AGI->verbose("\$digit_stocount = \"$digit_stocount\"");
@@ -71,9 +75,9 @@ if (strlen($dial_number) != 0) {
 	$dial_number = $valid_number;
 }
 
-if (!(searchAllowList($dial_number) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) && (strlen($dial_number) != 0)) { // dialed number is not part of any of the allowed numbers so add it if it is not empty
+if (!(searchAllowList($dial_number, $target_list_id) || searchContactManager($dial_number) || searchAsteriskPhonebook($dial_number)) && (strlen($dial_number) != 0)) { // dialed number is not part of any of the allowed numbers so add it if it is not empty
 	$AGI->verbose("adding number to allowlist");
-	$done = $AGI->database_put('allowlist',$dial_number,'automatically added');
+	$done = allowlistMemberPut($AGI, $target_list_id, $dial_number, 'automatically added');
 	if ($done['result'] == 0) {
 		$AGI->verbose("could not add " . allowlistMask($dial_number) . " to allowlist");
 	} else {

@@ -27,6 +27,8 @@ class Allowlist implements BMO
     const DIALPLAN_NUMBER_REGEX = '^[+]?[0-9]{1,20}$';
     const DESCRIPTION_MAX = 255;
     const LIST_ID_PATTERN = '/^[0-9]{1,4}$/D';
+    /** Dialplan form of LIST_ID_PATTERN; used in app-allowlist-check ARG1 guard. */
+    const DIALPLAN_LIST_ID_REGEX = '^[0-9]{1,4}$';
     const LIST_NAME_MAX = 64;
     const LIST_MAX = 100;
     const DEFAULT_LIST_ID = 1;
@@ -638,10 +640,16 @@ class Allowlist implements BMO
         $ext->add($id, $c, '', new \ext_gosub('app-allowlist-pause-check,s,1'));
 	    $ext->add($id, $c, '', new \ext_gotoif('$["${DB_EXISTS(allowlist/pause)}"="1"]', 'returnto'));
 
+        $ext->add($id, $c, '', new \ext_set('LOCAL(ALLIST)', '${IF($["${REGEX("' . self::DIALPLAN_LIST_ID_REGEX . '" ${ARG1})}"="1"]?${ARG1}:1)}'));
         // A1: only digit caller IDs (optional leading +) are looked up in the shared family.
         $ext->add($id, $c, '', new \ext_set('ALCIDOK', '${REGEX("' . self::DIALPLAN_NUMBER_REGEX . '" ${CALLERID(num)})}'));
         $ext->add($id, $c, '', new \ext_gotoif('$["${ALCIDOK}"!="1"]', 'check-contacts'));
-        $ext->add($id, $c, 'check-list', new \ext_gotoif('$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'check-contacts'));
+        $ext->add($id, $c, 'check-list', new \ext_gotoif('$["${LOCAL(ALLIST)}"="1"]', 'check-list-default'));
+        $ext->add($id, $c, '', new \ext_gotoif('$["${DB_EXISTS(allowlist-list/${LOCAL(ALLIST)}/${CALLERID(num)})}"="0"]', 'check-contacts'));
+        $ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
+        $ext->add($id, $c, '', new \ext_return(''));
+
+        $ext->add($id, $c, 'check-list-default', new \ext_gotoif('$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'check-contacts'));
         $ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
         $ext->add($id, $c, '', new \ext_return(''));
 
@@ -1956,6 +1964,36 @@ class Allowlist implements BMO
             return false;
         }
         return self::parseDidMappingValue($var);
+    }
+
+    /**
+     * Validated list id for dialplan screening on this inbound route, or false when unscreened.
+     */
+    public function dialplanScreenListId($did, $cid)
+    {
+        if (!$this->astman->connected())
+        {
+            $this->auditLog('Allowlist dialplan: inbound route screening skipped (Asterisk Manager not connected)');
+            return false;
+        }
+        $exten = $did . ($cid == "" ? "" : '/' . $cid);
+        $var = $this->astman->database_get('allowlist', 'did/' . $exten);
+        if ($var === false || $var === '')
+        {
+            return false;
+        }
+        $listId = self::parseDidMappingValue($var);
+        if ($listId === false)
+        {
+            $this->auditLog('Allowlist dialplan: inbound route left unscreened (unparseable allowlist id) at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
+            return false;
+        }
+        if (!$this->listExists($listId))
+        {
+            $this->auditLog('Allowlist dialplan: inbound route left unscreened (missing list ' . (int)$listId . ') at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
+            return false;
+        }
+        return (int)$listId;
     }
 
     public function didDelete($did, $cid)

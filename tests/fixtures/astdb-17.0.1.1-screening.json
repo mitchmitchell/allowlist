@@ -1,0 +1,17 @@
+{
+  "astdb": {
+    "/allowlist/dest": "app-blackhole,hangup,1",
+    "/allowlist/pause": "0",
+    "/allowlist/knowncallers": "1",
+    "/allowlist/did/5550100": "1",
+    "/allowlist/did//15559870000": "1",
+    "/allowlist/did/15551230000/15559870000": "1",
+    "/allowlist/autoadd/1": "1,0,99",
+    "/allowlist/2025550111": "Alice"
+  },
+  "dids": [
+    {"extension": "5550100", "cidnum": "", "pricid": false},
+    {"extension": "", "cidnum": "15559870000", "pricid": true},
+    {"extension": "15551230000", "cidnum": "15559870000", "pricid": true}
+  ]
+}
