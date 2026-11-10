@@ -77,7 +77,8 @@ class Restore Extends Base\RestoreBase{
 	/**
 	 * Value checks for restored settings (M4). Returns a reason to skip, or null.
 	 * pause: numeric epoch no later than now + 24 h (0 = not paused).
-	 * autoadd/*: "1,<int>,<int>". pausepin: 4-12 digits. knowncallers: '' or '1'.
+	 * autoadd/*: "1,<int>,<int>[,<allowlist id>]" (optional fourth field).
+	 * did/*: allowlist list id (1-4 digits). pausepin: 4-12 digits. knowncallers: '' or '1'.
 	 */
 	public function settingRejectReason($allowlist, $key, $value){
 		if($key === 'dest'){

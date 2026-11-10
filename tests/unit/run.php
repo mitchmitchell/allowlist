@@ -525,6 +525,8 @@ check(Allowlist::formatAutoaddMappingValue(0, 99) === '1,0,99', 'autoadd format 
 check(Allowlist::formatAutoaddMappingValue(0, 99, 2) === '1,0,99,2', 'autoadd format includes named list id');
 list($fp, $al) = fresh();
 unset($fp->astman->db['/allowlist-lists/1']);
+check($al->listExists(1) === true && $al->listGetName(1) === 'Default' && ($al->listGetAll()[1] ?? null) === 'Default', 'list 1 exists with Default name before metadata key');
+check($al->didAdd('5550299', '') === true && $al->routeAdd(7, '0', '10') === true, 'didAdd and routeAdd default list succeed without metadata key');
 check($al->upgradeAllowlistDataModel() === true && ($fp->astman->db['/allowlist-lists/1'] ?? null) === 'Default', 'upgrade writes Default list metadata once');
 $dbAfterFirst = $fp->astman->db;
 check($al->upgradeAllowlistDataModel() === true && $fp->astman->db === $dbAfterFirst, 'upgrade is idempotent');
@@ -558,6 +560,23 @@ $al->listMemberAdd(2, array('number' => '2025550210'));
 $fp->astman->failDel = true;
 check($al->listDelete(2) === false && $al->getLastError() !== '' && isset($fp->astman->db['/allowlist-lists/2']), 'listDelete with failed member delete keeps metadata');
 $fp->astman->failDel = false;
+list($fp, $al) = fresh();
+$id2 = $al->listCreate('MemDel');
+$al->listMemberAdd(2, array('number' => '2025550211'));
+$fp->astman->failDel = true;
+check($al->listMemberDel(2, '2025550211') === false && $al->getLastError() !== '', 'listMemberDel sets lastError when delete fails');
+$fp->astman->failDel = false;
+
+list($fp, $al) = fresh();
+$fp->astman->connectedState = false;
+$threw = false;
+try { $al->upgradeAllowlistDataModel(); } catch (\Throwable $e) { $threw = true; }
+check($threw, 'upgradeAllowlistDataModel throws when Asterisk Manager is down');
+$fp->Notifications = new FakeNotifications();
+$threw = false;
+try { $al->install(); } catch (\Throwable $e) { $threw = true; }
+check(!$threw && count($fp->Notifications->warnings) === 1, 'install skips upgrade and warns when Asterisk Manager is down');
+$fp->astman->connectedState = true;
 
 list($fp, $al) = fresh();
 foreach (array('0', '-1', '1;Hangup', '2/../x', 99) as $bad) {

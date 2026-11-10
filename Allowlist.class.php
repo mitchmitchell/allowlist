@@ -493,7 +493,31 @@ class Allowlist implements BMO
         $fcc->update();
         unset($fcc);
 
-        $this->upgradeAllowlistDataModel();
+        if ($this->astman->connected())
+        {
+            $this->upgradeAllowlistDataModel();
+        }
+        else
+        {
+            $msg = _('Allowlist list metadata upgrade was skipped because Asterisk Manager is not connected; it will run on the next module install when the manager is available.');
+            $this->auditLog('Allowlist: upgrade skipped (Asterisk Manager not connected)');
+            $notify = null;
+            if (property_exists($this->FreePBX, 'Notifications') || method_exists($this->FreePBX, '__get'))
+            {
+                try
+                {
+                    $notify = $this->FreePBX->Notifications;
+                }
+                catch (\Throwable $e)
+                {
+                    $notify = null;
+                }
+            }
+            if (is_object($notify) && method_exists($notify, 'add_warning'))
+            {
+                $notify->add_warning('allowlist', 'UPGRADESKIP', _('Allowlist upgrade skipped'), $msg, '', true, true);
+            }
+        }
     }
     public function uninstall()
     {
@@ -1526,6 +1550,10 @@ class Allowlist implements BMO
         {
             return false;
         }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            return true;
+        }
         $name = $this->astman->database_get('allowlist-lists', (string)$id);
         return $name !== false && $name !== '';
     }
@@ -1553,6 +1581,10 @@ class Allowlist implements BMO
                 $out[$parsed] = (string)$v;
             }
         }
+        if (!isset($out[self::DEFAULT_LIST_ID]))
+        {
+            $out[self::DEFAULT_LIST_ID] = self::DEFAULT_LIST_NAME;
+        }
         ksort($out, SORT_NUMERIC);
         return $out;
     }
@@ -1565,7 +1597,11 @@ class Allowlist implements BMO
             return false;
         }
         $name = $this->astman->database_get('allowlist-lists', (string)$id);
-        return ($name === false || $name === '') ? false : (string)$name;
+        if ($name === false || $name === '')
+        {
+            return $id === self::DEFAULT_LIST_ID ? self::DEFAULT_LIST_NAME : false;
+        }
+        return (string)$name;
     }
 
     public function listCreate($name)
@@ -1611,14 +1647,14 @@ class Allowlist implements BMO
             $this->lastError = _('Invalid allowlist id or name.');
             return false;
         }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
         if (!$this->listExists($id))
         {
             $this->lastError = _('Unknown allowlist.');
             return false;
-        }
-        if (!$this->astman->connected())
-        {
-            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
         if (!$this->astman->database_put('allowlist-lists', (string)$id, $name))
         {
@@ -1857,6 +1893,10 @@ class Allowlist implements BMO
             $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid DID/CID');
             return false;
         }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
         $stored = self::formatDidMappingValue($listId);
         if ($stored === false || !$this->listExists($stored))
         {
@@ -1864,20 +1904,13 @@ class Allowlist implements BMO
             $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
             return false;
         }
-        if ($this->astman->connected())
+        $exten = $did . ($cid == "" ? "" : '/' . $cid);
+        if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
         {
-            $exten = $did . ($cid == "" ? "" : '/' . $cid);
-            if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
-            {
-                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
-                return false;
-            }
-            return true;
+            $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+            return false;
         }
-        else
-        {
-            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
-        }
+        return true;
     }
 
     public function didGetListId($did, $cid)
@@ -1940,26 +1973,24 @@ class Allowlist implements BMO
             $this->auditLog('Allowlist: rejected an outbound-route auto-add setting (invalid counts)');
             return false;
         }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
         $stored = self::formatAutoaddMappingValue((int)$ld, (int)$sd, $listId);
-        if ($stored === false || !$this->listExists(self::parseListIdValue($listId)))
+        $parsedListId = self::parseListIdValue($listId);
+        if ($stored === false || $parsedListId === false || !$this->listExists($parsedListId))
         {
             $this->lastError = _('Invalid allowlist id for this outbound route.');
             $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
             return false;
         }
-        if ($this->astman->connected())
+        if (!$this->astman->database_put('allowlist', 'autoadd/' . (int)$id, $stored))
         {
-            if (!$this->astman->database_put('allowlist', 'autoadd/' . (int)$id, $stored))
-            {
-                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
-                return false;
-            }
-            return true;
+            $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+            return false;
         }
-        else
-        {
-            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
-        }
+        return true;
     }
 
     public function routeDelete($id)
