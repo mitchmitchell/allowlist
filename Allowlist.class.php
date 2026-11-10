@@ -1712,7 +1712,11 @@ class Allowlist implements BMO
             if (strpos($k, '/allowlist-list/' . $id . '/') === 0)
             {
                 $member = substr($k, strlen('/allowlist-list/' . $id . '/'));
-                $this->astman->database_del('allowlist-list', $id . '/' . $member);
+                if (!$this->astman->database_del('allowlist-list', $id . '/' . $member))
+                {
+                    $this->lastError = _('Could not delete allowlist members: the Asterisk database rejected a delete.');
+                    return false;
+                }
             }
         }
         if (!$this->astman->database_del('allowlist-lists', (string)$id))
@@ -1776,7 +1780,12 @@ class Allowlist implements BMO
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
-        return $this->astman->database_del('allowlist-list', $id . '/' . $n);
+        if (!$this->astman->database_del('allowlist-list', $id . '/' . $n))
+        {
+            $this->lastError = _('Could not delete the number: the Asterisk database rejected the delete.');
+            return false;
+        }
+        return true;
     }
 
     /**

@@ -552,6 +552,12 @@ $al->routeAdd(5, '0', '10', 2);
 check($al->listDelete(2) === false && strpos($al->getLastError(), '5') !== false, 'listDelete refuses assigned outbound route');
 $al->routeDelete(5);
 check($al->listDelete(2) === true && !isset($fp->astman->db['/allowlist-lists/2']), 'listDelete removes metadata when unassigned');
+list($fp, $al) = fresh();
+$id2 = $al->listCreate('FailDel');
+$al->listMemberAdd(2, array('number' => '2025550210'));
+$fp->astman->failDel = true;
+check($al->listDelete(2) === false && $al->getLastError() !== '' && isset($fp->astman->db['/allowlist-lists/2']), 'listDelete with failed member delete keeps metadata');
+$fp->astman->failDel = false;
 
 list($fp, $al) = fresh();
 foreach (array('0', '-1', '1;Hangup', '2/../x', 99) as $bad) {
