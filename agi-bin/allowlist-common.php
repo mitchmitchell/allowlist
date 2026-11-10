@@ -54,6 +54,50 @@ function allowlistListExists($listId) {
 	return is_array($res) && !empty($res['result']) && isset($res['data']) && $res['data'] !== '';
 }
 
+function allowlistAuditLogNotice($message) {
+	global $allowlist_test_audit_logs;
+	if (isset($allowlist_test_audit_logs) && is_array($allowlist_test_audit_logs)) {
+		$allowlist_test_audit_logs[] = $message;
+	}
+	if (function_exists('freepbx_log') && defined('FPBX_LOG_NOTICE')) {
+		freepbx_log(FPBX_LOG_NOTICE, $message);
+	} else {
+		error_log($message);
+	}
+}
+
+/**
+ * @return int|false Target list id, or false after auditing a fail-closed skip
+ */
+function allowlistResolveAutoaddTargetList($routeId, $autoaddValue) {
+	$routeKey = allowlistParseListIdValue($routeId);
+	$routeLogged = $routeKey === false ? 0 : $routeKey;
+	$parsed = allowlistParseAutoaddListId(is_string($autoaddValue) ? $autoaddValue : '');
+	if ($parsed === false) {
+		allowlistAuditLogNotice('Allowlist auto-add: outbound route ' . $routeLogged . ' skipped (unparseable autoadd value)');
+		return false;
+	}
+	if (!allowlistListExists($parsed)) {
+		allowlistAuditLogNotice('Allowlist auto-add: outbound route ' . $routeLogged . ' skipped (missing allowlist list)');
+		return false;
+	}
+	return $parsed;
+}
+
+/**
+ * @return array AGI database_put result shape
+ */
+function allowlistMemberPut($AGI, $listId, $number, $description) {
+	$id = allowlistParseListIdValue($listId);
+	if ($id === false) {
+		return array('result' => 0);
+	}
+	if ($id === 1) {
+		return $AGI->database_put('allowlist', $number, $description);
+	}
+	return $AGI->database_put('allowlist-list', $id . '/' . $number, $description);
+}
+
 /**
  * Mirror of \FreePBX\modules\Allowlist::normalizeNumber() for AGI scripts, which
  * run without the module class. Keep the two in step; tests/unit checks they agree.

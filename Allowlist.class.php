@@ -640,12 +640,12 @@ class Allowlist implements BMO
         $ext->add($id, $c, '', new \ext_gosub('app-allowlist-pause-check,s,1'));
 	    $ext->add($id, $c, '', new \ext_gotoif('$["${DB_EXISTS(allowlist/pause)}"="1"]', 'returnto'));
 
-        $ext->add($id, $c, '', new \ext_set('ALLIST', '${IF($["${REGEX("' . self::DIALPLAN_LIST_ID_REGEX . '" ${ARG1})}"="1"]?${ARG1}:1)}'));
+        $ext->add($id, $c, '', new \ext_set('LOCAL(ALLIST)', '${IF($["${REGEX("' . self::DIALPLAN_LIST_ID_REGEX . '" ${ARG1})}"="1"]?${ARG1}:1)}'));
         // A1: only digit caller IDs (optional leading +) are looked up in the shared family.
         $ext->add($id, $c, '', new \ext_set('ALCIDOK', '${REGEX("' . self::DIALPLAN_NUMBER_REGEX . '" ${CALLERID(num)})}'));
         $ext->add($id, $c, '', new \ext_gotoif('$["${ALCIDOK}"!="1"]', 'check-contacts'));
-        $ext->add($id, $c, 'check-list', new \ext_gotoif('$["${ALLIST}"="1"]', 'check-list-default'));
-        $ext->add($id, $c, '', new \ext_gotoif('$["${DB_EXISTS(allowlist-list/${ALLIST}/${CALLERID(num)})}"="0"]', 'check-contacts'));
+        $ext->add($id, $c, 'check-list', new \ext_gotoif('$["${LOCAL(ALLIST)}"="1"]', 'check-list-default'));
+        $ext->add($id, $c, '', new \ext_gotoif('$["${DB_EXISTS(allowlist-list/${LOCAL(ALLIST)}/${CALLERID(num)})}"="0"]', 'check-contacts'));
         $ext->add($id, $c, '', new \ext_setvar('CALLED_ALLOWLIST', '1'));
         $ext->add($id, $c, '', new \ext_return(''));
 
@@ -1976,14 +1976,20 @@ class Allowlist implements BMO
             $this->auditLog('Allowlist dialplan: inbound route screening skipped (Asterisk Manager not connected)');
             return false;
         }
-        $listId = $this->didGetListId($did, $cid);
+        $exten = $did . ($cid == "" ? "" : '/' . $cid);
+        $var = $this->astman->database_get('allowlist', 'did/' . $exten);
+        if ($var === false || $var === '')
+        {
+            return false;
+        }
+        $listId = self::parseDidMappingValue($var);
         if ($listId === false)
         {
+            $this->auditLog('Allowlist dialplan: inbound route left unscreened (unparseable allowlist id) at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
             return false;
         }
         if (!$this->listExists($listId))
         {
-            $exten = $did . ($cid == "" ? "" : '/' . $cid);
             $this->auditLog('Allowlist dialplan: inbound route left unscreened (missing list ' . (int)$listId . ') at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
             return false;
         }

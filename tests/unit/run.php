@@ -141,13 +141,13 @@ $check = $ctx('app-allowlist-check', 's');
 $labels = array_column($check, 'label');
 $iList = array_search('check-list', $labels, true);
 $guardSet = $check[$iList - 2]; $guardGoto = $check[$iList - 1];
-$allistLine = array_values(array_filter($check, function ($l) { return $l['app'] === 'ext_set' && ($l['args'][0] ?? null) === 'ALLIST'; }));
-check(count($allistLine) === 1 && strpos($allistLine[0]['args'][1], '${ARG1}') !== false, 'runtime: ALLIST defaults invalid ARG1 before list branch');
+$allistLine = array_values(array_filter($check, function ($l) { return $l['app'] === 'ext_set' && ($l['args'][0] ?? null) === 'LOCAL(ALLIST)'; }));
+check(count($allistLine) === 1 && strpos($allistLine[0]['args'][1], '${ARG1}') !== false, 'runtime: LOCAL(ALLIST) defaults invalid ARG1 before list branch');
 check($guardSet['app'] === 'ext_set' && $guardSet['args'] === array('ALCIDOK', '${REGEX("^[+]?[0-9]{1,20}$" ${CALLERID(num)})}'), 'A1(a) CID REGEX set right before check-list');
 check($guardGoto['app'] === 'ext_gotoif' && $guardGoto['args'] === array('$["${ALCIDOK}"!="1"]', 'check-contacts'), 'A1(b) non-digit CID goes to check-contacts');
 $iDefault = array_search('check-list-default', $labels, true);
-check($iDefault !== false && $check[$iList]['args'] === array('$["${ALLIST}"="1"]', 'check-list-default'), 'runtime: check-list branches to Default list lookup');
-check($check[$iList + 1]['args'][0] === '$["${DB_EXISTS(allowlist-list/${ALLIST}/${CALLERID(num)})}"="0"]', 'runtime: named list uses allowlist-list family');
+check($iDefault !== false && $check[$iList]['args'] === array('$["${LOCAL(ALLIST)}"="1"]', 'check-list-default'), 'runtime: check-list branches to Default list lookup');
+check($check[$iList + 1]['args'][0] === '$["${DB_EXISTS(allowlist-list/${LOCAL(ALLIST)}/${CALLERID(num)})}"="0"]', 'runtime: named list uses allowlist-list family');
 check($check[$iDefault]['args'][0] === '$["${DB_EXISTS(allowlist/${CALLERID(num)})}"="0"]', 'runtime: Default list keeps allowlist family lookup');
 $add1 = $ctx('app-allowlist-add', '1');
 $iPut = array_search('DB(allowlist/${allownr})', array_map(function ($l) { return $l['args'][0] ?? null; }, $add1), true);
@@ -633,6 +633,11 @@ foreach (array('0', '-1', '1;Hangup') as $bad) {
 	$fp->astman->db['/allowlist/did/5550301'] = $bad;
 	check($al->didGetListId('5550301', '') === false && $al->dialplanScreenListId('5550301', '') === false, 'dialplan rejects stored list id ' . json_encode($bad));
 }
+list($fp, $al) = fresh();
+$al->auditEntries = array();
+$fp->astman->db['/allowlist/did/5550302'] = '1;Hangup';
+check($al->dialplanScreenListId('5550302', '') === false && strpos(implode("\n", $al->auditEntries), 'unparseable allowlist id') !== false, 'unparseable did mapping is unscreened and audit-logged');
+check(strpos(implode("\n", $al->auditEntries), '5550302') === false, 'unparseable mapping audit masks DID');
 
 class RecAutoaddAGI {
 	public $puts = array();
@@ -662,6 +667,15 @@ check(allowlistListExists(2) === true && allowlistListExists(99) === false, 'AGI
 check(searchAllowList('2025550300', 2) === false && in_array('allowlist-list/2/2025550300', $AGI->cmds, true), 'searchAllowList uses allowlist-list for named lists');
 check(searchAllowList('2025550300', 1) === false && in_array('allowlist/2025550300', $AGI->cmds, true), 'searchAllowList uses allowlist for list 1');
 check(searchAllowList('2025550300', '1;Hangup') === false, 'searchAllowList rejects invalid list id');
+$allowlist_test_audit_logs = array();
+$AGI = new RecAutoaddAGI();
+check(allowlistResolveAutoaddTargetList('3', '1,,99') === false && end($allowlist_test_audit_logs) === 'Allowlist auto-add: outbound route 3 skipped (unparseable autoadd value)', 'autoadd AGI audits unparseable route mapping');
+$allowlist_test_audit_logs = array();
+check(allowlistResolveAutoaddTargetList('4', '1,0,10,88') === false && end($allowlist_test_audit_logs) === 'Allowlist auto-add: outbound route 4 skipped (missing allowlist list)', 'autoadd AGI audits missing-list route mapping');
+$putAgi = new RecAutoaddAGI();
+$done = allowlistMemberPut($putAgi, 2, '2025550400', 'automatically added');
+check($done['result'] === 1 && $putAgi->puts[0][0] === 'allowlist-list' && $putAgi->puts[0][1] === '2/2025550400', 'autoadd member put uses allowlist-list for named lists');
+unset($allowlist_test_audit_logs);
 
 if (!function_exists('core_did_list')) {
 	function core_did_list() {
@@ -686,15 +700,15 @@ allowlist_hookGet_config('asterisk');
 $gosubs = array_values(array_filter($ext->splices, function ($s) { return $s['app'] === 'ext_gosub'; }));
 check(count($gosubs) === 3, '17.0.1.1 fixture emits exactly one screening Gosub per screened DID (3)');
 foreach ($gosubs as $g) {
-	check($g['args'][0] === '1(1)' && $g['args'][1] === 's' && $g['args'][2] === 'app-allowlist-check', 'legacy single-list install uses Gosub arg 1(1) on ' . $g['ctx'] . '/' . $g['exten']);
+	check(($g['rendered'] ?? '') === 'Gosub(app-allowlist-check,s,1(1))', 'legacy single-list install Gosub output on ' . $g['ctx'] . '/' . $g['exten']);
 }
 $wantLegacy = array(
-	array('ext-did-0002', '5550100', '1(1)'),
-	array('ext-did-0001', 's/15559870000', '1(1)'),
-	array('ext-did-0001', '15551230000/15559870000', '1(1)'),
+	array('ext-did-0002', '5550100', 'Gosub(app-allowlist-check,s,1(1))'),
+	array('ext-did-0001', 's/15559870000', 'Gosub(app-allowlist-check,s,1(1))'),
+	array('ext-did-0001', '15551230000/15559870000', 'Gosub(app-allowlist-check,s,1(1))'),
 );
 foreach ($wantLegacy as $i => $w) {
-	check($gosubs[$i]['ctx'] === $w[0] && $gosubs[$i]['exten'] === $w[1] && $gosubs[$i]['args'][0] === $w[2], '17.0.1.1 fixture screening block ' . ($i + 1) . ' matches expected context/exten');
+	check($gosubs[$i]['ctx'] === $w[0] && $gosubs[$i]['exten'] === $w[1] && ($gosubs[$i]['rendered'] ?? '') === $w[2], '17.0.1.1 fixture screening block ' . ($i + 1) . ' matches expected context/exten');
 }
 list($fp, $al) = fresh();
 $al->listCreate('Sales');
@@ -704,7 +718,7 @@ $unit_core_did_list = array(array('extension' => '5550400', 'cidnum' => '', 'pri
 $ext = new FakeExt();
 allowlist_hookGet_config('asterisk');
 $gosubs = array_values(array_filter($ext->splices, function ($s) { return $s['app'] === 'ext_gosub'; }));
-check(count($gosubs) === 1 && $gosubs[0]['args'][0] === '1(2)', 'named-list route passes list id in Gosub arg');
+check(count($gosubs) === 1 && ($gosubs[0]['rendered'] ?? '') === 'Gosub(app-allowlist-check,s,1(2))', 'named-list route renders Gosub(app-allowlist-check,s,1(2))');
 list($fp, $al) = fresh();
 $al->auditEntries = array();
 $fp->astman->db['/allowlist/did/5550401'] = '88';

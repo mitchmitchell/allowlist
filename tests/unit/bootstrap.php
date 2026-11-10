@@ -5,8 +5,27 @@ namespace {
 	if (!function_exists('_')) {
 		function _($s) { return $s; }
 	}
-	// Any \ext_* dialplan class becomes a recorder of its constructor arguments.
+	class ext_gosub {
+		public $args;
+		private $pri;
+		private $ext;
+		private $context;
+		private $gosubArgs;
+		public function __construct($pri, $ext = false, $context = false, $args = '') {
+			$this->args = func_get_args();
+			$this->pri = $pri;
+			$this->ext = $ext;
+			$this->context = $context;
+			$this->gosubArgs = $args;
+		}
+		public function output() {
+			return 'Gosub(' . ($this->context ? $this->context . ',' : '') . ($this->ext ? $this->ext . ',' : '') . $this->pri . '(' . $this->gosubArgs . '))';
+		}
+	}
 	spl_autoload_register(function ($class) {
+		if ($class === 'ext_gosub') {
+			return;
+		}
 		if (strpos($class, 'ext_') === 0 && preg_match('/^ext_[a-z_]+$/', $class)) {
 			eval('class ' . $class . ' { public $args; public function __construct(...$a) { $this->args = $a; } }');
 		}
@@ -24,10 +43,18 @@ namespace {
 	class FakeExt {
 		public $lines = array();
 		public $splices = array();
-		public function add($ctx, $exten, $label, $obj) { $this->lines[] = array('ctx' => $ctx, 'exten' => $exten, 'label' => $label, 'app' => get_class($obj), 'args' => $obj->args); }
+		private static function recordDialplan($obj) {
+			$rendered = ($obj instanceof ext_gosub) ? $obj->output() : null;
+			return array('app' => get_class($obj), 'args' => $obj->args, 'rendered' => $rendered);
+		}
+		public function add($ctx, $exten, $label, $obj) {
+			$row = self::recordDialplan($obj);
+			$this->lines[] = array('ctx' => $ctx, 'exten' => $exten, 'label' => $label) + $row;
+		}
 		public function addInclude($a, $b) {}
 		public function splice($ctx, $exten, $pos, $obj, $label = '', $prio = 1) {
-			$this->splices[] = array('ctx' => $ctx, 'exten' => $exten, 'pos' => $pos, 'label' => $label, 'app' => get_class($obj), 'args' => $obj->args, 'prio' => $prio);
+			$row = self::recordDialplan($obj);
+			$this->splices[] = array('ctx' => $ctx, 'exten' => $exten, 'pos' => $pos, 'label' => $label, 'prio' => $prio) + $row;
 		}
 	}
 	class FakeAstman {
@@ -70,4 +97,3 @@ namespace FreePBX\modules\Backup {
 		public function restoreLegacyFeatureCodes($pdo) { $this->featureCodesRestored = true; }
 	}
 }
-

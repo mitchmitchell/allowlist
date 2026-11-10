@@ -211,7 +211,7 @@ function allowlist_hookGet_config($engine) {
 
                         $exten = $exten.(empty($cidnum)?"":"/".$cidnum); //if a CID num is defined, add it
                         $ext->splice($context, $exten, 'callerid', new ext_set('alreturnhere', '1'),"allowchecks",1);
-                        $ext->splice($context, $exten, 'allowchecks', new ext_gosub('1(' . (int)$screenListId . ')', 's', 'app-allowlist-check'),"",1);
+                        $ext->splice($context, $exten, 'allowchecks', new ext_gosub('1', 's', 'app-allowlist-check', (int)$screenListId),"",1);
                         $ext->splice($context, $exten, 'allowchecks', new ext_gotoif('${LEN(${ALDEST})}', '${ALDEST}'),"",2);
 
                         //$ext->splice($context, $exten, 'did-cid-hook', new ext_set('alreturnhere', '1'),"",1);
