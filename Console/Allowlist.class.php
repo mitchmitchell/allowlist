@@ -34,11 +34,15 @@ class Allowlist extends Command {
 				new InputOption('route', 'o', InputOption::VALUE_NONE, _('Set whether autoadd to the allowlist is processed for outbound route')),
 				new InputOption('settings', 's', InputOption::VALUE_NONE, _('Enable/Disable settings for allow list processing')),
 				new InputOption('import', 'm', InputOption::VALUE_REQUIRED, _('Import settings from file')),
-				new InputOption('export', 'x', InputOption::VALUE_REQUIRED, _('Export settings to file'))
+				new InputOption('export', 'x', InputOption::VALUE_REQUIRED, _('Export settings to file')),
+				new InputOption('smoke-list-mutation', null, InputOption::VALUE_NONE, _('Smoke-test list mutation lock, list create/delete, and route assignment (creates only zz-smoke-* objects)'))
 			));
 	}
 	protected function execute(InputInterface $input, OutputInterface $output){
 		$allowlist = \FreePBX::create()->Allowlist;
+		if ($input->getOption('smoke-list-mutation')) {
+			return $this->runSmokeListMutation($allowlist, $output);
+		}
 		if($input->getOption('list')) {
 			$table = new Table($output);
 			$table->setHeaders(array(_('ID'),_('Name')));
@@ -216,7 +220,7 @@ class Allowlist extends Command {
 			}
 		}
 		
-		if(!$input->getOption('add') && !$input->getOption('delete') && !$input->getOption('list') && !$input->getOption('destination') && !$input->getOption('settings') && !$input->getOption('route')  && !$input->getOption('did') && !$input->getOption('import')  && !$input->getOption('export')) {
+		if(!$input->getOption('add') && !$input->getOption('delete') && !$input->getOption('list') && !$input->getOption('destination') && !$input->getOption('settings') && !$input->getOption('route')  && !$input->getOption('did') && !$input->getOption('import')  && !$input->getOption('export') && !$input->getOption('smoke-list-mutation')) {
 			$this->outputHelp($input,$output);
 			exit(4);
 		}
@@ -353,6 +357,78 @@ class Allowlist extends Command {
 			return false;
 		}
 		return true;
+	}
+
+	private function runSmokeListMutation($allowlist, OutputInterface $output) {
+		$passed = true;
+		$listId = false;
+		$listName = 'zz-smoke-' . getmypid();
+		$smokeDid = '8999' . sprintf('%04d', getmypid() % 10000);
+		$didAssigned = false;
+		$step = function ($label, $ok) use ($output, &$passed) {
+			$output->writeln($label . ': ' . ($ok ? 'PASS' : 'FAIL'));
+			if (!$ok) {
+				$passed = false;
+			}
+		};
+		try {
+			$listId = $allowlist->listCreate($listName);
+			$step('create throwaway list', $listId !== false);
+			if ($listId === false) {
+				return 1;
+			}
+			$didAssigned = ($allowlist->didAdd($smokeDid, '', $listId) === true);
+			$step('assign throwaway inbound route', $didAssigned);
+			$refused = ($allowlist->listDelete($listId) === false);
+			$err = $allowlist->getLastError();
+			$step('listDelete refuses while route assigned', $refused && is_string($err) && $err !== '');
+			if ($didAssigned) {
+				$step('unassign throwaway inbound route', $allowlist->didDelete($smokeDid, '') !== false);
+				$didAssigned = false;
+			}
+			$deleted = ($allowlist->listDelete($listId) === true);
+			$step('delete throwaway list', $deleted);
+			if ($deleted) {
+				$listId = false;
+			}
+			$path = $allowlist->getListMutationLockFilePath();
+			$lockOk = is_string($path) && $path !== '' && is_file($path);
+			$step('lock file path present', $lockOk);
+			if ($lockOk) {
+				$mode = sprintf('%04o', fileperms($path) & 07777);
+				$owner = fileowner($path);
+				$group = filegroup($path);
+				$ownerLabel = (string)$owner;
+				$groupLabel = (string)$group;
+				if (function_exists('posix_getpwuid')) {
+					$pw = posix_getpwuid($owner);
+					if (is_array($pw) && isset($pw['name'])) {
+						$ownerLabel = $pw['name'];
+					}
+				}
+				if (function_exists('posix_getgrgid')) {
+					$gr = posix_getgrgid($group);
+					if (is_array($gr) && isset($gr['name'])) {
+						$groupLabel = $gr['name'];
+					}
+				}
+				$output->writeln(sprintf('lock file: %s owner=%s group=%s mode=%s', $path, $ownerLabel, $groupLabel, $mode));
+				$fp = fopen($path, 'r');
+				$step('lock file open after smoke', $fp !== false);
+				if (is_resource($fp)) {
+					fclose($fp);
+				}
+			}
+		} finally {
+			if ($didAssigned) {
+				$allowlist->didDelete($smokeDid, '');
+			}
+			if ($listId !== false && $allowlist->listExists($listId)) {
+				$allowlist->didDelete($smokeDid, '');
+				$allowlist->listDelete($listId);
+			}
+		}
+		return $passed ? 0 : 1;
 	}
 
 	private function getDestinations() {

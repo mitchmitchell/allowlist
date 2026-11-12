@@ -12,6 +12,15 @@ namespace FreePBX\modules {
 		public $testListMutationDbReloadPath = null;
 		public $testAfterListCreateWrite = null;
 		public $testAfterListDeleteWrite = null;
+		public $testBeforeListMutationLockAcquire = null;
+
+		protected function beforeListMutationLockAcquire()
+		{
+			if ($this->testBeforeListMutationLockAcquire !== null)
+			{
+				($this->testBeforeListMutationLockAcquire)($this);
+			}
+		}
 
 		protected function listMutationLockPath()
 		{

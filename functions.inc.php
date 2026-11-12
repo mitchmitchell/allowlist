@@ -131,7 +131,9 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
         case 'delIncoming':
             $extarray = explode('/', $request['extdisplay'], 2);
             if (count($extarray) == 2) {
-                $allowlist->didDelete($extarray[0], $extarray[1]);
+                if ($allowlist->didDelete($extarray[0], $extarray[1]) === false) {
+                    $allowlist->reportHookRejection(_('inbound route'));
+                }
             }
             break;
         case 'edtIncoming':                 // deleting and adding as in core module - ensures changes to did or cid are updated for the route
@@ -148,10 +150,14 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
                     break;
                 }
                 if ($old !== null && ($old[0] !== $extension || $old[1] !== $cidnum)) {
-                    $allowlist->didDelete($old[0], $old[1]);
+                    if ($allowlist->didDelete($old[0], $old[1]) === false) {
+                        $allowlist->reportHookRejection(_('inbound route'));
+                    }
                 }
             } elseif ($old !== null) {
-                $allowlist->didDelete($old[0], $old[1]);
+                if ($allowlist->didDelete($old[0], $old[1]) === false) {
+                    $allowlist->reportHookRejection(_('inbound route'));
+                }
             }
             break;
         case 'addroute':
@@ -162,7 +168,9 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
             }
             break;
         case 'delroute':
-            $allowlist->routeDelete($request['id']);
+            if ($allowlist->routeDelete($request['id']) === false) {
+                $allowlist->reportHookRejection(_('outbound route auto-add'));
+            }
             break;
         case 'editroute':                 // deleting and adding as in core module - ensures changes are updated for the route
             // routeAdd overwrites the same key, so only delete when auto-add is
@@ -172,7 +180,9 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
                     $allowlist->reportHookRejection(_('outbound route auto-add'));
                 }
             } else {
-                $allowlist->routeDelete($request['id']);
+                if ($allowlist->routeDelete($request['id']) === false) {
+                    $allowlist->reportHookRejection(_('outbound route auto-add'));
+                }
             }
             break;
         }

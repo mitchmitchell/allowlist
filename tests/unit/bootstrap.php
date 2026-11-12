@@ -80,9 +80,23 @@ namespace {
 			return array('tst-blocked,s,1' => array('description' => 'TST blocked'), 'app-blackhole,hangup,1' => array('description' => 'Hangup'));
 		}
 	}
+	class FakeConfig {
+		private $vals = array();
+		public function __construct($vals = array()) { $this->vals = $vals; }
+		public function get($k) { return array_key_exists($k, $this->vals) ? $this->vals[$k] : false; }
+	}
 	class FakeFreePBX {
-		public $astman, $Blacklist, $Destinations;
-		public function __construct() { $this->astman = new FakeAstman(); $this->Blacklist = new FakeBlacklist(); $this->Destinations = new FakeDestinations(); }
+		public $astman, $Blacklist, $Destinations, $Config;
+		public function __construct() {
+			$this->astman = new FakeAstman();
+			$this->Blacklist = new FakeBlacklist();
+			$this->Destinations = new FakeDestinations();
+			$this->Config = new FakeConfig(array(
+				'ASTSPOOLDIR' => sys_get_temp_dir(),
+				'AMPASTERISKUSER' => 'asterisk',
+				'AMPASTERISKGROUP' => 'asterisk',
+			));
+		}
 	}
 }
 

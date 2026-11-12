@@ -39,6 +39,12 @@ class Allowlist implements BMO
 
     private $lastError = '';
     private $listMutationLockHandle = null;
+    private $listMutationLockDepth = 0;
+    private $listMutationLockFailureReason = '';
+
+    const LIST_MUTATION_LOCK_FAILURE_BUSY = 'lock_busy';
+    const LIST_MUTATION_LOCK_FAILURE_OPEN = 'lock_open_failed';
+    const LIST_MUTATION_LOCK_FAILURE_SPOOL = 'lock_spool_unavailable';
 
     /**
      * Validate an allowlist number.
@@ -229,20 +235,41 @@ class Allowlist implements BMO
         return $this->lastError;
     }
 
+    public function getListMutationLockFailureReason()
+    {
+        return $this->listMutationLockFailureReason;
+    }
+
+    public function getListMutationLockFilePath()
+    {
+        return $this->listMutationLockPath();
+    }
+
+    protected function listMutationLockSpoolDir()
+    {
+        if (!isset($this->FreePBX->Config))
+        {
+            return false;
+        }
+        $spool = $this->FreePBX->Config->get('ASTSPOOLDIR');
+        if (!is_string($spool) || $spool === '')
+        {
+            return false;
+        }
+        $dir = rtrim($spool, '/');
+        if (!is_dir($dir) || !is_writable($dir))
+        {
+            return false;
+        }
+        return $dir;
+    }
+
     protected function listMutationLockPath()
     {
-        $dir = null;
-        if (isset($this->FreePBX->Config))
+        $dir = $this->listMutationLockSpoolDir();
+        if ($dir === false)
         {
-            $spool = $this->FreePBX->Config->get('ASTSPOOLDIR');
-            if (is_string($spool) && $spool !== '')
-            {
-                $dir = rtrim($spool, '/');
-            }
-        }
-        if ($dir === null || $dir === '')
-        {
-            $dir = sys_get_temp_dir();
+            return '';
         }
         return $dir . '/allowlist-list-mutation.lock';
     }
@@ -268,16 +295,80 @@ class Allowlist implements BMO
     {
     }
 
+    protected function beforeListMutationLockAcquire()
+    {
+    }
+
+    private function provisionListMutationLockFile($path)
+    {
+        if ($path === '' || file_exists($path))
+        {
+            return;
+        }
+        $created = fopen($path, 'w');
+        if ($created === false)
+        {
+            return;
+        }
+        fclose($created);
+        chmod($path, 0660);
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0)
+        {
+            $user = 'asterisk';
+            $group = 'asterisk';
+            if (isset($this->FreePBX->Config))
+            {
+                $cfgUser = $this->FreePBX->Config->get('AMPASTERISKUSER');
+                $cfgGroup = $this->FreePBX->Config->get('AMPASTERISKGROUP');
+                if (is_string($cfgUser) && $cfgUser !== '')
+                {
+                    $user = $cfgUser;
+                }
+                if (is_string($cfgGroup) && $cfgGroup !== '')
+                {
+                    $group = $cfgGroup;
+                }
+            }
+            if (function_exists('posix_getpwnam'))
+            {
+                $pw = posix_getpwnam($user);
+                if (is_array($pw))
+                {
+                    chown($path, $user);
+                }
+            }
+            if (function_exists('posix_getgrnam'))
+            {
+                $gr = posix_getgrnam($group);
+                if (is_array($gr))
+                {
+                    chgrp($path, $group);
+                }
+            }
+        }
+    }
+
     private function acquireListMutationLock()
     {
         if ($this->listMutationLockHandle !== null)
         {
+            $this->listMutationLockDepth++;
             return true;
         }
+        $this->listMutationLockFailureReason = '';
         $path = $this->listMutationLockPath();
-        $fp = @fopen($path, 'c+');
+        if ($path === '')
+        {
+            $this->listMutationLockFailureReason = self::LIST_MUTATION_LOCK_FAILURE_SPOOL;
+            $this->lastError = _('Allowlist list-mutation lock is not available: the Asterisk spool directory is missing or not writable.');
+            return false;
+        }
+        $this->provisionListMutationLockFile($path);
+        $fp = fopen($path, 'r');
         if ($fp === false)
         {
+            $this->listMutationLockFailureReason = self::LIST_MUTATION_LOCK_FAILURE_OPEN;
+            $this->lastError = sprintf(_('Could not open the allowlist list-mutation lock file (%s); check permissions.'), $path);
             return false;
         }
         $wait = $this->listMutationLockWaitSec();
@@ -288,6 +379,7 @@ class Allowlist implements BMO
             if (flock($fp, LOCK_EX | LOCK_NB))
             {
                 $this->listMutationLockHandle = $fp;
+                $this->listMutationLockDepth = 1;
                 return true;
             }
             if (!$signaledWaiting)
@@ -298,6 +390,8 @@ class Allowlist implements BMO
             if (microtime(true) >= $deadline)
             {
                 fclose($fp);
+                $this->listMutationLockFailureReason = self::LIST_MUTATION_LOCK_FAILURE_BUSY;
+                $this->lastError = _('Another allowlist operation is in progress; try again shortly.');
                 return false;
             }
             usleep(self::LIST_MUTATION_LOCK_POLL_USEC);
@@ -307,6 +401,11 @@ class Allowlist implements BMO
     private function releaseListMutationLock()
     {
         if ($this->listMutationLockHandle === null)
+        {
+            return;
+        }
+        $this->listMutationLockDepth--;
+        if ($this->listMutationLockDepth > 0)
         {
             return;
         }
@@ -321,9 +420,13 @@ class Allowlist implements BMO
      */
     private function withListMutationLock(callable $fn)
     {
+        $this->beforeListMutationLockAcquire();
         if (!$this->acquireListMutationLock())
         {
-            $this->lastError = _('Another allowlist operation is in progress; try again shortly.');
+            if ($this->lastError === '')
+            {
+                $this->lastError = _('Another allowlist operation is in progress; try again shortly.');
+            }
             return false;
         }
         try
@@ -334,6 +437,15 @@ class Allowlist implements BMO
         finally
         {
             $this->releaseListMutationLock();
+        }
+    }
+
+    public function provisionListMutationLockForInstall()
+    {
+        $path = $this->listMutationLockPath();
+        if ($path !== '')
+        {
+            $this->provisionListMutationLockFile($path);
         }
     }
 
@@ -606,6 +718,7 @@ class Allowlist implements BMO
         $fcc->update();
         unset($fcc);
 
+        $this->provisionListMutationLockForInstall();
         if ($this->astman->connected())
         {
             $this->upgradeAllowlistDataModel();
@@ -634,6 +747,11 @@ class Allowlist implements BMO
     }
     public function uninstall()
     {
+        $path = $this->listMutationLockPath();
+        if ($path !== '' && is_file($path))
+        {
+            unlink($path);
+        }
     }
 
     public function doConfigPageInit($page)
@@ -1873,31 +1991,31 @@ class Allowlist implements BMO
             $this->lastError = _('The default allowlist cannot be deleted.');
             return false;
         }
-        if (!$this->listExists($id))
-        {
-            $this->lastError = _('Unknown allowlist.');
-            return false;
-        }
-        $uses = $this->listRoutesUsingList($id);
-        if (!empty($uses['inbound']) || !empty($uses['outbound']))
-        {
-            $parts = array();
-            if (!empty($uses['inbound']))
-            {
-                $parts[] = sprintf(_('inbound %s'), implode(', ', $uses['inbound']));
-            }
-            if (!empty($uses['outbound']))
-            {
-                $parts[] = sprintf(_('outbound route id %s'), implode(', ', $uses['outbound']));
-            }
-            $this->lastError = sprintf(_('This allowlist is still assigned (%s). Remove those assignments first.'), implode('; ', $parts));
-            return false;
-        }
         if (!$this->astman->connected())
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
         return $this->withListMutationLock(function () use ($id) {
+            if (!$this->listExists($id))
+            {
+                $this->lastError = _('Unknown allowlist.');
+                return false;
+            }
+            $uses = $this->listRoutesUsingList($id);
+            if (!empty($uses['inbound']) || !empty($uses['outbound']))
+            {
+                $parts = array();
+                if (!empty($uses['inbound']))
+                {
+                    $parts[] = sprintf(_('inbound %s'), implode(', ', $uses['inbound']));
+                }
+                if (!empty($uses['outbound']))
+                {
+                    $parts[] = sprintf(_('outbound route id %s'), implode(', ', $uses['outbound']));
+                }
+                $this->lastError = sprintf(_('This allowlist is still assigned (%s). Remove those assignments first.'), implode('; ', $parts));
+                return false;
+            }
             foreach (array_keys($this->astman->database_show('allowlist-list')) as $k)
             {
                 if (strpos($k, '/allowlist-list/' . $id . '/') === 0)
@@ -2072,14 +2190,27 @@ class Allowlist implements BMO
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
         $stored = self::formatDidMappingValue($listId);
-        if ($stored === false || !$this->listExists($stored))
+        $parsedListId = self::parseListIdValue($listId);
+        if ($stored === false || $parsedListId === false)
+        {
+            $this->lastError = _('Invalid allowlist id for this inbound route.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+            return false;
+        }
+        if (!$this->listExists($parsedListId))
         {
             $this->lastError = _('Invalid allowlist id for this inbound route.');
             $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
             return false;
         }
         $exten = $did . ($cid == "" ? "" : '/' . $cid);
-        return $this->withListMutationLock(function () use ($exten, $stored) {
+        return $this->withListMutationLock(function () use ($exten, $stored, $parsedListId) {
+            if (!$this->listExists($parsedListId))
+            {
+                $this->lastError = _('Invalid allowlist id for this inbound route.');
+                $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+                return false;
+            }
             if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
             {
                 $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
@@ -2142,8 +2273,8 @@ class Allowlist implements BMO
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
         $exten = $did . ($cid == "" ? "" : '/' . $cid);
-        $this->withListMutationLock(function () use ($exten) {
-            $this->astman->database_del('allowlist', 'did/' . $exten);
+        return $this->withListMutationLock(function () use ($exten) {
+            return $this->astman->database_del('allowlist', 'did/' . $exten);
         });
     }
 
@@ -2184,14 +2315,26 @@ class Allowlist implements BMO
         }
         $stored = self::formatAutoaddMappingValue((int)$ld, (int)$sd, $listId);
         $parsedListId = self::parseListIdValue($listId);
-        if ($stored === false || $parsedListId === false || !$this->listExists($parsedListId))
+        if ($stored === false || $parsedListId === false)
+        {
+            $this->lastError = _('Invalid allowlist id for this outbound route.');
+            $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
+            return false;
+        }
+        if (!$this->listExists($parsedListId))
         {
             $this->lastError = _('Invalid allowlist id for this outbound route.');
             $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
             return false;
         }
         $routeId = (int)$id;
-        return $this->withListMutationLock(function () use ($routeId, $stored) {
+        return $this->withListMutationLock(function () use ($routeId, $stored, $parsedListId) {
+            if (!$this->listExists($parsedListId))
+            {
+                $this->lastError = _('Invalid allowlist id for this outbound route.');
+                $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
+                return false;
+            }
             if (!$this->astman->database_put('allowlist', 'autoadd/' . $routeId, $stored))
             {
                 $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
@@ -2208,12 +2351,9 @@ class Allowlist implements BMO
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
-        if ($this->withListMutationLock(function () use ($id) {
-            $this->astman->database_del('allowlist', 'autoadd/' . $id);
-        }) === false)
-        {
-            return;
-        }
+        return $this->withListMutationLock(function () use ($id) {
+            return $this->astman->database_del('allowlist', 'autoadd/' . $id);
+        });
     }
 
     public function routeIsSet($id)
