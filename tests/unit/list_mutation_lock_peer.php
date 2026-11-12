@@ -1,11 +1,9 @@
 <?php
 require __DIR__ . '/bootstrap.php';
-$root = dirname(__DIR__, 2);
-require $root . '/Allowlist.class.php';
-use FreePBX\modules\Allowlist;
+require __DIR__ . '/AllowlistListMutationTestHarness.php';
 if ($argc < 4)
 {
-    fwrite(STDERR, "usage: list_mutation_lock_peer.php <lockPath> <dbJsonPath> <listName> [readyPath]\n");
+    fwrite(STDERR, "usage: list_mutation_lock_peer.php <lockPath> <dbJsonPath> <listName> [waitingPath]\n");
     exit(2);
 }
 $lockPath = $argv[1];
@@ -21,10 +19,10 @@ if (is_readable($dbPath))
         $fp->astman->db = $decoded;
     }
 }
-$al = new Allowlist($fp);
-$al->listMutationLockPathOverride = $lockPath;
-$al->listMutationDbReloadPath = $dbPath;
-$al->listMutationLockWaitingPath = $waitingPath;
+$al = new \FreePBX\modules\AllowlistListMutationTestHarness($fp);
+$al->testListMutationLockPath = $lockPath;
+$al->testListMutationDbReloadPath = $dbPath;
+$al->testListMutationLockWaitingPath = $waitingPath;
 $id = $al->listCreate($name);
 if ($id === false)
 {
