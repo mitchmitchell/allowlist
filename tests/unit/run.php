@@ -571,8 +571,33 @@ $smokeListId = $al->listCreate('zz-smoke-assign');
 $fp->astman->db['/allowlist/did/5550911'] = '1';
 check($al->didAddRouteIfUnassigned('5550911', '', $smokeListId) === false && $al->getLastError() !== '', 'didAddRouteIfUnassigned refuses occupied did under lock');
 check($fp->astman->db['/allowlist/did/5550911'] === '1', 'didAddRouteIfUnassigned does not overwrite existing did mapping');
-check($al->listDelete($smokeListId) === true, 'smoke partial-failure cleanup deletes created list');
-check(!isset($fp->astman->db['/allowlist-lists/' . $smokeListId]), 'smoke partial-failure leaves no list metadata');
+$didAssigned = false;
+$createdListId = $smokeListId;
+$leftoverPartial = $al->cleanupSmokeListMutationArtifacts('5550911', $createdListId, $didAssigned);
+check($createdListId === false && !isset($fp->astman->db['/allowlist-lists/' . $smokeListId]), 'smoke cleanup deletes list when route was never assigned');
+
+list($fp, $al) = fresh();
+$smokeDidRetry = '5550914';
+$createdListId = $al->listCreate('zz-smoke-retry');
+$listIdRetry = $createdListId;
+$didAssigned = ($al->didAddRouteIfUnassigned($smokeDidRetry, '', $createdListId) === true);
+$fp->astman->failDel = true;
+$al->didDelete($smokeDidRetry, '');
+check($didAssigned === true && isset($fp->astman->db['/allowlist/did/' . $smokeDidRetry]), 'smoke try unassign failure leaves didAssigned set for finally retry');
+$fp->astman->failDel = false;
+$leftoverRetry = $al->cleanupSmokeListMutationArtifacts($smokeDidRetry, $createdListId, $didAssigned);
+check($didAssigned === false && $createdListId === false && $leftoverRetry['did'] === false && $leftoverRetry['listId'] === false, 'smoke cleanup retries did unassign and deletes list');
+check(!isset($fp->astman->db['/allowlist/did/' . $smokeDidRetry]) && !isset($fp->astman->db['/allowlist-lists/' . $listIdRetry]), 'smoke cleanup retry leaves no DID or list metadata');
+
+list($fp, $al) = fresh();
+$smokeDidFail = '5550915';
+$createdListId = $al->listCreate('zz-smoke-leftover');
+$didAssigned = ($al->didAddRouteIfUnassigned($smokeDidFail, '', $createdListId) === true);
+$fp->astman->failDel = true;
+$leftoverFail = $al->cleanupSmokeListMutationArtifacts($smokeDidFail, $createdListId, $didAssigned);
+$msgs = $al->smokeListMutationCleanupFailureMessages($leftoverFail);
+check($leftoverFail['did'] === $smokeDidFail && $leftoverFail['listId'] !== false, 'smoke cleanup reports leftover DID and list when teardown fails');
+check(count($msgs) >= 2 && strpos($msgs[0], $smokeDidFail) !== false && strpos($msgs[1], 'zz-smoke-leftover') !== false, 'smoke cleanup failure messages name leftover DID and list');
 
 list($fp, $al) = fresh();
 $smokeListId2 = $al->listCreate('zz-smoke-lockdid');

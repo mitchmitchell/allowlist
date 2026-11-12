@@ -396,8 +396,11 @@ class Allowlist extends Command {
 			$err = $allowlist->getLastError();
 			$step('listDelete refuses while route assigned', $refused && is_string($err) && $err !== '');
 			if ($didAssigned) {
-				$step('unassign throwaway inbound route', $allowlist->didDelete($smokeDid, '') !== false);
-				$didAssigned = false;
+				$unassigned = ($allowlist->didDelete($smokeDid, '') !== false);
+				$step('unassign throwaway inbound route', $unassigned);
+				if ($unassigned) {
+					$didAssigned = false;
+				}
 			}
 			$deleted = ($allowlist->listDelete($createdListId) === true);
 			$step('delete throwaway list', $deleted);
@@ -433,11 +436,9 @@ class Allowlist extends Command {
 				}
 			}
 		} finally {
-			if ($didAssigned) {
-				$allowlist->didDelete($smokeDid, '');
-			}
-			if ($createdListId !== false && $allowlist->listExists($createdListId)) {
-				$allowlist->listDelete($createdListId);
+			$leftover = $allowlist->cleanupSmokeListMutationArtifacts($smokeDid, $createdListId, $didAssigned);
+			foreach ($allowlist->smokeListMutationCleanupFailureMessages($leftover) as $line) {
+				$output->writeln('<error>' . $line . '</error>');
 			}
 		}
 		return $passed ? 0 : 1;

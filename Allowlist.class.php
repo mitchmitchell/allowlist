@@ -382,6 +382,59 @@ class Allowlist implements BMO
         return '8999' . sprintf('%04d', getmypid() % 10000);
     }
 
+    public function cleanupSmokeListMutationArtifacts($smokeDid, &$createdListId, &$didAssigned)
+    {
+        $leftover = array(
+            'did' => false,
+            'listId' => false,
+            'listName' => '',
+        );
+        if ($didAssigned)
+        {
+            if ($this->didDelete($smokeDid, ''))
+            {
+                $didAssigned = false;
+            }
+            else
+            {
+                $leftover['did'] = $smokeDid;
+            }
+        }
+        if ($createdListId !== false && $this->listExists($createdListId))
+        {
+            $listName = $this->astman->database_get('allowlist-lists', (string)$createdListId);
+            if (!is_string($listName))
+            {
+                $listName = '';
+            }
+            if ($this->listDelete($createdListId))
+            {
+                $createdListId = false;
+            }
+            else
+            {
+                $leftover['listId'] = $createdListId;
+                $leftover['listName'] = $listName;
+            }
+        }
+        return $leftover;
+    }
+
+    public function smokeListMutationCleanupFailureMessages(array $leftover)
+    {
+        $out = array();
+        if ($leftover['did'] !== false && $leftover['did'] !== '')
+        {
+            $out[] = sprintf(_('Smoke cleanup failed: remove the allowlist inbound-route mapping for DID %s manually.'), $leftover['did']);
+        }
+        if ($leftover['listId'] !== false)
+        {
+            $name = $leftover['listName'] !== '' ? $leftover['listName'] : ('id ' . $leftover['listId']);
+            $out[] = sprintf(_('Smoke cleanup failed: remove the throwaway allowlist %s manually.'), $name);
+        }
+        return $out;
+    }
+
     private function acquireListMutationLock()
     {
         if ($this->listMutationLockHandle !== null)
