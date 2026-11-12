@@ -559,6 +559,41 @@ check($al->routeDelete(77) === true && $al->getLastError() === '', 'routeDelete 
 $smokeDid = $al->defaultSmokeListMutationDid();
 $fp->astman->db['/allowlist/did/' . $smokeDid] = '1';
 check($al->didIsSet($smokeDid, '') === true, 'smoke DID collision is detectable before assignment');
+$listMetaBefore = array_filter(array_keys($fp->astman->db), function ($k) { return strpos($k, '/allowlist-lists/') === 0; });
+if (!$al->didIsSet($smokeDid, '')) {
+	$al->listCreate('zz-smoke-abort');
+}
+$listMetaAfter = array_filter(array_keys($fp->astman->db), function ($k) { return strpos($k, '/allowlist-lists/') === 0; });
+check($listMetaBefore === $listMetaAfter, 'smoke DID pre-check abort writes no list metadata');
+
+list($fp, $al) = fresh();
+$smokeListId = $al->listCreate('zz-smoke-assign');
+$fp->astman->db['/allowlist/did/5550911'] = '1';
+check($al->didAddRouteIfUnassigned('5550911', '', $smokeListId) === false && $al->getLastError() !== '', 'didAddRouteIfUnassigned refuses occupied did under lock');
+check($fp->astman->db['/allowlist/did/5550911'] === '1', 'didAddRouteIfUnassigned does not overwrite existing did mapping');
+check($al->listDelete($smokeListId) === true, 'smoke partial-failure cleanup deletes created list');
+check(!isset($fp->astman->db['/allowlist-lists/' . $smokeListId]), 'smoke partial-failure leaves no list metadata');
+
+list($fp, $al) = fresh();
+$smokeListId2 = $al->listCreate('zz-smoke-lockdid');
+$raceDid = '5550912';
+check($al->didAddRouteIfUnassigned($raceDid, '', $smokeListId2) === true, 'didAddRouteIfUnassigned assigns free did');
+$al->listDelete($smokeListId2);
+
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist/autoadd/9'] = '1,0,10';
+$fp->astman->failDel = true;
+$fp->astman->failDelDropsConnection = true;
+check($al->routeDelete(9) === false && $al->getLastError() !== '' && isset($fp->astman->db['/allowlist/autoadd/9']), 'routeDelete fails when AMI drops during delete with key still present');
+list($fp, $al) = fresh();
+$fp->Notifications = new FakeNotifications();
+FreePBX::$al = $al;
+$fp->astman->db['/allowlist/autoadd/10'] = '1,0,10';
+$fp->astman->failDel = true;
+$fp->astman->failDelDropsConnection = true;
+$warnRoute = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '10', 'autoadd_allowlist' => 'no'));
+check(count($fp->Notifications->warnings) === $warnRoute + 1 && $al->getLastError() !== '' && strpos($fp->Notifications->warnings[$warnRoute][3], $al->getLastError()) !== false, 'editroute autoadd off reports failure when AMI drops during routeDelete');
 
 // --- Restore skip-log masks did/<DID>/<CID> keys ------------------------------
 list($fp, $al) = fresh();

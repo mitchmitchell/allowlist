@@ -366,6 +366,11 @@ class Allowlist implements BMO
         $left = $this->astman->database_get($family, $key);
         if ($left === false || $left === '')
         {
+            if (!$this->astman->connected())
+            {
+                $this->lastError = _('Cannot connect to Asterisk Manager, is Asterisk running?');
+                return false;
+            }
             return true;
         }
         $this->lastError = _('Could not delete the setting: the Asterisk database rejected the delete.');
@@ -2203,6 +2208,55 @@ class Allowlist implements BMO
             return $v === null || $v === '' || (is_scalar($v) && preg_match('/^[0-9+XNZxnz._\[\]-]{1,40}$/D', (string)$v) === 1);
         };
         return $ok($did) && $ok($cid);
+    }
+
+    public function didAddRouteIfUnassigned($did, $cid, $listId)
+    {
+        $this->lastError = '';
+        if (!self::validDidCid($did, $cid))
+        {
+            $this->lastError = _('DID and caller ID may only contain digits, + and dial-pattern characters.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid DID/CID');
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $stored = self::formatDidMappingValue($listId);
+        $parsedListId = self::parseListIdValue($listId);
+        if ($stored === false || $parsedListId === false)
+        {
+            $this->lastError = _('Invalid allowlist id for this inbound route.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+            return false;
+        }
+        if (!$this->listExists($parsedListId))
+        {
+            $this->lastError = _('Invalid allowlist id for this inbound route.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+            return false;
+        }
+        $exten = $did . ($cid == "" ? "" : '/' . $cid);
+        return $this->withListMutationLock(function () use ($did, $cid, $exten, $stored, $parsedListId) {
+            if ($this->didIsSet($did, $cid))
+            {
+                $this->lastError = _('This inbound route already has an allowlist screening setting.');
+                return false;
+            }
+            if (!$this->listExists($parsedListId))
+            {
+                $this->lastError = _('Invalid allowlist id for this inbound route.');
+                $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+                return false;
+            }
+            if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
+            {
+                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+                return false;
+            }
+            return true;
+        });
     }
 
     public function didAdd($did, $cid, $listId = self::DEFAULT_LIST_ID)

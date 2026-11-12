@@ -117,7 +117,9 @@ class Allowlist extends Command {
 				}
 			} else if($routes[($id - 1)]['checked'] == 'No'){
 				$output->writeln(sprintf(_('Enabling Outbound Route %s'),$routes[($id - 1)]['name']));
-				$allowlist->routeAdd($id);
+				if ($allowlist->routeAdd($id) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			}
 			$routes = $this->listOutgoingRoutes($allowlist);
 			$table = new Table($output);
@@ -146,7 +148,9 @@ class Allowlist extends Command {
 				}
 			} else if($routes[($id - 1)]['checked'] == 'No'){
 				$output->writeln(sprintf(_('Enabling DID %s'),$routes[($id - 1)]['description']));
-				$allowlist->didAdd($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']);
+				if ($allowlist->didAdd($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			}
 			$routes = $this->listIncomingRoutes($allowlist);
 			$table = new Table($output);
@@ -365,7 +369,7 @@ class Allowlist extends Command {
 
 	private function runSmokeListMutation($allowlist, OutputInterface $output) {
 		$passed = true;
-		$listId = false;
+		$createdListId = false;
 		$listName = 'zz-smoke-' . getmypid();
 		$smokeDid = $allowlist->defaultSmokeListMutationDid();
 		$didAssigned = false;
@@ -376,30 +380,29 @@ class Allowlist extends Command {
 			}
 		};
 		try {
-			$listId = $allowlist->listCreate($listName);
-			$step('create throwaway list', $listId !== false);
-			if ($listId === false) {
-				return 1;
-			}
 			if ($allowlist->didIsSet($smokeDid, '')) {
 				$output->writeln(_('Smoke test aborted: an allowlist did/ mapping already exists for the smoke DID; refusing to overwrite it.'));
 				$step('smoke DID available', false);
-				$listId = false;
 				return 1;
 			}
-			$didAssigned = ($allowlist->didAdd($smokeDid, '', $listId) === true);
+			$createdListId = $allowlist->listCreate($listName);
+			$step('create throwaway list', $createdListId !== false);
+			if ($createdListId === false) {
+				return 1;
+			}
+			$didAssigned = ($allowlist->didAddRouteIfUnassigned($smokeDid, '', $createdListId) === true);
 			$step('assign throwaway inbound route', $didAssigned);
-			$refused = ($allowlist->listDelete($listId) === false);
+			$refused = ($allowlist->listDelete($createdListId) === false);
 			$err = $allowlist->getLastError();
 			$step('listDelete refuses while route assigned', $refused && is_string($err) && $err !== '');
 			if ($didAssigned) {
 				$step('unassign throwaway inbound route', $allowlist->didDelete($smokeDid, '') !== false);
 				$didAssigned = false;
 			}
-			$deleted = ($allowlist->listDelete($listId) === true);
+			$deleted = ($allowlist->listDelete($createdListId) === true);
 			$step('delete throwaway list', $deleted);
 			if ($deleted) {
-				$listId = false;
+				$createdListId = false;
 			}
 			$path = $allowlist->getListMutationLockFilePath();
 			$lockOk = is_string($path) && $path !== '' && is_file($path);
@@ -433,9 +436,8 @@ class Allowlist extends Command {
 			if ($didAssigned) {
 				$allowlist->didDelete($smokeDid, '');
 			}
-			if ($listId !== false && $allowlist->listExists($listId)) {
-				$allowlist->didDelete($smokeDid, '');
-				$allowlist->listDelete($listId);
+			if ($createdListId !== false && $allowlist->listExists($createdListId)) {
+				$allowlist->listDelete($createdListId);
 			}
 		}
 		return $passed ? 0 : 1;
