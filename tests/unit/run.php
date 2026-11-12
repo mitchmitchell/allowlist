@@ -14,6 +14,9 @@ function check($cond, $name) {
 	global $fails, $count; $count++;
 	if ($cond) { echo "ok   $name\n"; } else { $fails++; echo "FAIL $name\n"; }
 }
+function allowlistUnitWriteDb($fp, $path) {
+	file_put_contents($path, json_encode($fp->astman->db));
+}
 function fresh() {
 	$fp = new FakeFreePBX();
 	$fp->astman->db = array(
@@ -560,6 +563,52 @@ $fp->astman->db['/allowlist/did/15551230000/15559870000'] = 'not-valid';
 $al->scanUnparseableAllowlistMappings();
 $logged = implode("\n", $al->auditEntries);
 check(strpos($logged, '15551230000') === false && strpos($logged, '15559870000') === false && substr_count($logged, '*******0000') >= 1, 'upgrade scan audit masks did route numbers');
+
+list($fp, $al) = fresh();
+$unitLockPath = sys_get_temp_dir() . '/allowlist-unit-mutation-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+$unitDbPath = sys_get_temp_dir() . '/allowlist-unit-mutation-db-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.json';
+$unitPeerReadyPath = sys_get_temp_dir() . '/allowlist-unit-mutation-ready-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.flag';
+$al->listMutationLockPathOverride = $unitLockPath;
+allowlistUnitWriteDb($fp, $unitDbPath);
+$unitLockHeld = fopen($unitLockPath, 'c+');
+check($unitLockHeld !== false && flock($unitLockHeld, LOCK_EX), 'parent holds mutation lock for peer test');
+$peerCmd = array(PHP_BINARY, __DIR__ . '/list_mutation_lock_peer.php', $unitLockPath, $unitDbPath, 'Second', $unitPeerReadyPath);
+$peerSpec = array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w'));
+$peer = proc_open($peerCmd, $peerSpec, $peerPipes);
+check(is_resource($peer), 'list mutation peer process starts');
+$peerReadyDeadline = microtime(true) + 5;
+while (!is_readable($unitPeerReadyPath) && microtime(true) < $peerReadyDeadline)
+{
+	usleep(10000);
+}
+check(is_readable($unitPeerReadyPath), 'peer blocks acquiring mutation lock before parent listCreate');
+flock($unitLockHeld, LOCK_UN);
+fclose($unitLockHeld);
+$al->listMutationLockProbe = function ($locked, $next) use ($unitLockPath, $fp, $unitDbPath) {
+	$h = fopen($unitLockPath, 'c+');
+	$contended = flock($h, LOCK_EX | LOCK_NB);
+	check(!$contended, 'listCreate holds exclusive mutation lock');
+	fclose($h);
+	check($next === 2, 'first list id allocated under lock');
+	allowlistUnitWriteDb($fp, $unitDbPath);
+};
+$id2 = $al->listCreate('First');
+$al->listMutationLockProbe = null;
+check($id2 === 2 && $al->listGetName(2) === 'First', 'listCreate stores first named list under lock');
+$peerOut = stream_get_contents($peerPipes[1]);
+proc_close($peer);
+check(trim($peerOut) === '3', 'blocked listCreate observes first id and allocates 3');
+list($fp, $al) = fresh();
+$al->listMutationLockPathOverride = $unitLockPath;
+$al->listMutationLockWaitSecOverride = 0.35;
+$beforeLists = $fp->astman->db;
+$extHeld = fopen($unitLockPath, 'c+');
+check($extHeld !== false && flock($extHeld, LOCK_EX), 'test holds mutation lock');
+$blocked = $al->listCreate('Blocked');
+flock($extHeld, LOCK_UN);
+fclose($extHeld);
+check($blocked === false && $al->getLastError() !== '' && strpos($al->getLastError(), 'in progress') !== false, 'listCreate fails when lock not acquired');
+check($fp->astman->db === $beforeLists, 'lock-timeout listCreate writes no metadata');
 
 list($fp, $al) = fresh();
 $id2 = $al->listCreate('Sales');
