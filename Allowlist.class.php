@@ -235,11 +235,6 @@ class Allowlist implements BMO
         return $this->lastError;
     }
 
-    public function getListMutationLockFailureReason()
-    {
-        return $this->listMutationLockFailureReason;
-    }
-
     public function getListMutationLockFilePath()
     {
         return $this->listMutationLockPath();
@@ -312,40 +307,74 @@ class Allowlist implements BMO
         }
         fclose($created);
         chmod($path, 0660);
-        if (function_exists('posix_geteuid') && posix_geteuid() === 0)
+        $user = 'asterisk';
+        $group = 'asterisk';
+        if (isset($this->FreePBX->Config))
         {
-            $user = 'asterisk';
-            $group = 'asterisk';
-            if (isset($this->FreePBX->Config))
+            $cfgUser = $this->FreePBX->Config->get('AMPASTERISKUSER');
+            $cfgGroup = $this->FreePBX->Config->get('AMPASTERISKGROUP');
+            if (is_string($cfgUser) && $cfgUser !== '')
             {
-                $cfgUser = $this->FreePBX->Config->get('AMPASTERISKUSER');
-                $cfgGroup = $this->FreePBX->Config->get('AMPASTERISKGROUP');
-                if (is_string($cfgUser) && $cfgUser !== '')
-                {
-                    $user = $cfgUser;
-                }
-                if (is_string($cfgGroup) && $cfgGroup !== '')
-                {
-                    $group = $cfgGroup;
-                }
+                $user = $cfgUser;
             }
-            if (function_exists('posix_getpwnam'))
+            if (is_string($cfgGroup) && $cfgGroup !== '')
             {
-                $pw = posix_getpwnam($user);
-                if (is_array($pw))
-                {
-                    chown($path, $user);
-                }
-            }
-            if (function_exists('posix_getgrnam'))
-            {
-                $gr = posix_getgrnam($group);
-                if (is_array($gr))
-                {
-                    chgrp($path, $group);
-                }
+                $group = $cfgGroup;
             }
         }
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0 && function_exists('posix_getpwnam'))
+        {
+            $pw = posix_getpwnam($user);
+            if (is_array($pw))
+            {
+                if (chown($path, $user) === false)
+                {
+                    $this->auditLog('Allowlist: list-mutation lock chown failed for ' . $user);
+                }
+            }
+            else
+            {
+                $this->auditLog('Allowlist: list-mutation lock user lookup failed for ' . $user);
+            }
+        }
+        if (function_exists('posix_getgrnam'))
+        {
+            $gr = posix_getgrnam($group);
+            if (is_array($gr))
+            {
+                if (chgrp($path, $group) === false)
+                {
+                    $this->auditLog('Allowlist: list-mutation lock chgrp failed for ' . $group);
+                }
+            }
+            else
+            {
+                $this->auditLog('Allowlist: list-mutation lock group lookup failed for ' . $group);
+            }
+        }
+    }
+
+    /**
+     * @return bool True when the key is gone or was already absent; false on delete failure
+     */
+    private function deleteAllowlistAstKey($family, $key)
+    {
+        if ($this->astman->database_del($family, $key))
+        {
+            return true;
+        }
+        $left = $this->astman->database_get($family, $key);
+        if ($left === false || $left === '')
+        {
+            return true;
+        }
+        $this->lastError = _('Could not delete the setting: the Asterisk database rejected the delete.');
+        return false;
+    }
+
+    public function defaultSmokeListMutationDid()
+    {
+        return '8999' . sprintf('%04d', getmypid() % 10000);
     }
 
     private function acquireListMutationLock()
@@ -2274,7 +2303,7 @@ class Allowlist implements BMO
         }
         $exten = $did . ($cid == "" ? "" : '/' . $cid);
         return $this->withListMutationLock(function () use ($exten) {
-            return $this->astman->database_del('allowlist', 'did/' . $exten);
+            return $this->deleteAllowlistAstKey('allowlist', 'did/' . $exten);
         });
     }
 
@@ -2352,7 +2381,7 @@ class Allowlist implements BMO
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
         return $this->withListMutationLock(function () use ($id) {
-            return $this->astman->database_del('allowlist', 'autoadd/' . $id);
+            return $this->deleteAllowlistAstKey('allowlist', 'autoadd/' . (string)$id);
         });
     }
 

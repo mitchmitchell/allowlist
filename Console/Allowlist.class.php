@@ -112,7 +112,9 @@ class Allowlist extends Command {
 			$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
 			if($routes[($id - 1)]['checked'] == 'Yes'){
 				$output->writeln(sprintf(_('Disabling Outbound Route %s'),$routes[($id - 1)]['name']));
-				$allowlist->routeDelete($id);
+				if ($allowlist->routeDelete($id) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			} else if($routes[($id - 1)]['checked'] == 'No'){
 				$output->writeln(sprintf(_('Enabling Outbound Route %s'),$routes[($id - 1)]['name']));
 				$allowlist->routeAdd($id);
@@ -139,7 +141,9 @@ class Allowlist extends Command {
 			$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
 			if($routes[($id - 1)]['checked'] == 'Yes'){
 				$output->writeln(sprintf(_('Disabling DID %s'),$routes[($id - 1)]['description']));
-				$allowlist->didDelete($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']);
+				if ($allowlist->didDelete($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			} else if($routes[($id - 1)]['checked'] == 'No'){
 				$output->writeln(sprintf(_('Enabling DID %s'),$routes[($id - 1)]['description']));
 				$allowlist->didAdd($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']);
@@ -363,7 +367,7 @@ class Allowlist extends Command {
 		$passed = true;
 		$listId = false;
 		$listName = 'zz-smoke-' . getmypid();
-		$smokeDid = '8999' . sprintf('%04d', getmypid() % 10000);
+		$smokeDid = $allowlist->defaultSmokeListMutationDid();
 		$didAssigned = false;
 		$step = function ($label, $ok) use ($output, &$passed) {
 			$output->writeln($label . ': ' . ($ok ? 'PASS' : 'FAIL'));
@@ -375,6 +379,12 @@ class Allowlist extends Command {
 			$listId = $allowlist->listCreate($listName);
 			$step('create throwaway list', $listId !== false);
 			if ($listId === false) {
+				return 1;
+			}
+			if ($allowlist->didIsSet($smokeDid, '')) {
+				$output->writeln(_('Smoke test aborted: an allowlist did/ mapping already exists for the smoke DID; refusing to overwrite it.'));
+				$step('smoke DID available', false);
+				$listId = false;
 				return 1;
 			}
 			$didAssigned = ($allowlist->didAdd($smokeDid, '', $listId) === true);

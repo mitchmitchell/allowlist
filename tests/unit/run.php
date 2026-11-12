@@ -24,7 +24,7 @@ function allowlistUnitDeleteListForHook($al, $listId) {
 }
 function allowlistUnitUnlinkIfExists($path) {
 	if (is_string($path) && $path !== '' && (is_file($path) || is_link($path))) {
-		@unlink($path);
+		unlink($path);
 	}
 }
 function freshHarness() {
@@ -537,6 +537,29 @@ check($fp->astman->db['/allowlist/autoadd/1'] === '1,0,10', 'editroute with vali
 allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '1', 'autoadd_allowlist' => 'no'));
 check(!isset($fp->astman->db['/allowlist/autoadd/1']), 'editroute with auto-add turned off removes the setting');
 
+list($fp, $al) = fresh();
+$fp->Notifications = new FakeNotifications();
+FreePBX::$al = $al;
+$warn0 = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, array('action' => 'delIncoming', 'extdisplay' => '5550301/'));
+check(count($fp->Notifications->warnings) === $warn0, 'delIncoming with no did mapping adds no HOOKREJECT warning');
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550302/', 'enable_allowlist' => 'no', 'extension' => '5550302', 'cidnum' => ''));
+check(count($fp->Notifications->warnings) === $warn0, 'edtIncoming screening off with no mapping adds no HOOKREJECT warning');
+allowlist_hookProcess_core(null, array('action' => 'delroute', 'id' => '88'));
+check(count($fp->Notifications->warnings) === $warn0, 'delroute with no autoadd mapping adds no HOOKREJECT warning');
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '88', 'autoadd_allowlist' => 'no'));
+check(count($fp->Notifications->warnings) === $warn0, 'editroute autoadd off with no mapping adds no HOOKREJECT warning');
+$fp->astman->db['/allowlist/did/5550303'] = '1';
+$fp->astman->failDel = true;
+allowlist_hookProcess_core(null, array('action' => 'delIncoming', 'extdisplay' => '5550303/'));
+check(count($fp->Notifications->warnings) === $warn0 + 1 && $al->getLastError() !== '' && strpos($fp->Notifications->warnings[$warn0][3], $al->getLastError()) !== false, 'delIncoming reports non-empty reason on real delete failure');
+$fp->astman->failDel = false;
+check($al->didDelete('5550998', '') === true && $al->getLastError() === '', 'didDelete missing key succeeds without lastError');
+check($al->routeDelete(77) === true && $al->getLastError() === '', 'routeDelete missing key succeeds without lastError');
+$smokeDid = $al->defaultSmokeListMutationDid();
+$fp->astman->db['/allowlist/did/' . $smokeDid] = '1';
+check($al->didIsSet($smokeDid, '') === true, 'smoke DID collision is detectable before assignment');
+
 // --- Restore skip-log masks did/<DID>/<CID> keys ------------------------------
 list($fp, $al) = fresh();
 $fp->Allowlist = $al;
@@ -635,7 +658,7 @@ check($extHeld !== false && flock($extHeld, LOCK_EX), 'test holds mutation lock'
 $blocked = $al->listCreate('Blocked');
 flock($extHeld, LOCK_UN);
 fclose($extHeld);
-check($blocked === false && $al->getListMutationLockFailureReason() === Allowlist::LIST_MUTATION_LOCK_FAILURE_BUSY, 'listCreate fails when lock not acquired');
+check($blocked === false && $al->getLastError() !== '' && $fp->astman->db === $beforeLists, 'listCreate fails when lock not acquired');
 check($fp->astman->db === $beforeLists, 'lock-timeout listCreate writes no metadata');
 allowlistUnitUnlinkIfExists($unitLockPath);
 
@@ -680,15 +703,20 @@ allowlistUnitUnlinkIfExists($unitMemberReadyPath);
 list($fpNoSpool, $alNoSpool) = fresh();
 unset($alNoSpool->FreePBX->Config);
 $beforeNoSpool = $fpNoSpool->astman->db;
-check($alNoSpool->listCreate('NoSpool') === false && $alNoSpool->getListMutationLockFailureReason() === Allowlist::LIST_MUTATION_LOCK_FAILURE_SPOOL, 'listCreate fails closed without ASTSPOOLDIR');
+check($alNoSpool->listCreate('NoSpool') === false && strpos($alNoSpool->getLastError(), 'spool') !== false, 'listCreate fails closed without ASTSPOOLDIR');
 check($fpNoSpool->astman->db === $beforeNoSpool, 'no-spool listCreate writes nothing');
 
 list($fp, $al) = freshHarness();
-$badLockPath = '/root/allowlist-unit-lock-deny-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
-$al->testListMutationLockPath = $badLockPath;
-$beforeBadLock = $fp->astman->db;
-check($al->listCreate('BadLock') === false && $al->getListMutationLockFailureReason() === Allowlist::LIST_MUTATION_LOCK_FAILURE_OPEN, 'listCreate reports lock open failure');
-check($fp->astman->db === $beforeBadLock, 'lock open failure writes no metadata');
+$runAsRoot = function_exists('posix_geteuid') && posix_geteuid() === 0;
+if (!$runAsRoot) {
+	$badLockPath = '/root/allowlist-unit-lock-deny-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+	$al->testListMutationLockPath = $badLockPath;
+	$beforeBadLock = $fp->astman->db;
+	check($al->listCreate('BadLock') === false && strpos($al->getLastError(), 'lock file') !== false, 'listCreate reports lock open failure');
+	check($fp->astman->db === $beforeBadLock, 'lock open failure writes no metadata');
+} else {
+	check(true, 'listCreate lock open failure test skipped when run as root');
+}
 
 list($fp, $al) = freshHarness();
 $provisionLockPath = sys_get_temp_dir() . '/allowlist-unit-provision-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
@@ -696,7 +724,7 @@ $al->testListMutationLockPath = $provisionLockPath;
 $al->provisionListMutationLockForInstall();
 check($al->listCreate('Provisioned') === 2 && is_file($provisionLockPath), 'listCreate creates provisioned lock file');
 check((fileperms($provisionLockPath) & 0777) === 0660, 'provisioned lock file mode is 0660');
-@unlink($provisionLockPath);
+allowlistUnitUnlinkIfExists($provisionLockPath);
 
 list($fp, $al) = freshHarness();
 $nestedLockPath = sys_get_temp_dir() . '/allowlist-unit-nested-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
@@ -710,7 +738,7 @@ $al->testAfterListCreateWrite = function ($locked, $next) use ($nestedLockPath, 
 };
 check($al->listCreate('Nested') === 2, 'listCreate with nested rename completes');
 $al->testAfterListCreateWrite = null;
-@unlink($nestedLockPath);
+allowlistUnitUnlinkIfExists($nestedLockPath);
 
 list($fp, $al) = freshHarness();
 $raceLock = sys_get_temp_dir() . '/allowlist-unit-didrace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
@@ -722,6 +750,7 @@ $al->testBeforeListMutationLockAcquire = function ($me) {
 check($al->didAdd('5550888', '', 2) === false && $al->getLastError() !== '', 'didAdd after concurrent delete sets lastError');
 check(!isset($fp->astman->db['/allowlist/did/5550888']), 'didAdd after delete writes no did mapping');
 $al->testBeforeListMutationLockAcquire = null;
+allowlistUnitUnlinkIfExists($raceLock);
 
 list($fp, $al) = freshHarness();
 $raceLock2 = sys_get_temp_dir() . '/allowlist-unit-routerace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
@@ -733,9 +762,11 @@ $al->testBeforeListMutationLockAcquire = function ($me) {
 check($al->routeAdd(8, '0', '10', 2) === false && $al->getLastError() !== '', 'routeAdd after concurrent delete sets lastError');
 check(!isset($fp->astman->db['/allowlist/autoadd/8']), 'routeAdd after delete writes no autoadd mapping');
 $al->testBeforeListMutationLockAcquire = null;
+allowlistUnitUnlinkIfExists($raceLock2);
 
 list($fp, $al) = freshHarness();
-$al->testListMutationLockPath = sys_get_temp_dir() . '/allowlist-unit-renamerace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+$renameRaceLock = sys_get_temp_dir() . '/allowlist-unit-renamerace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+$al->testListMutationLockPath = $renameRaceLock;
 check($al->listCreate('RenameRace') === 2, 'listRename race test creates list 2');
 $al->testBeforeListMutationLockAcquire = function ($me) {
 	allowlistUnitDeleteListForHook($me, 2);
@@ -743,9 +774,11 @@ $al->testBeforeListMutationLockAcquire = function ($me) {
 check($al->listRename(2, 'Lost') === false && $al->getLastError() !== '', 'listRename after delete sets lastError');
 check(!isset($fp->astman->db['/allowlist-lists/2']), 'listRename after delete writes no list metadata');
 $al->testBeforeListMutationLockAcquire = null;
+allowlistUnitUnlinkIfExists($renameRaceLock);
 
 list($fp, $al) = freshHarness();
-$al->testListMutationLockPath = sys_get_temp_dir() . '/allowlist-unit-memdelrace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+$memDelRaceLock = sys_get_temp_dir() . '/allowlist-unit-memdelrace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+$al->testListMutationLockPath = $memDelRaceLock;
 check($al->listCreate('MemDelRace') === 2, 'listMemberDel race test creates list 2');
 $al->listMemberAdd(2, array('number' => '2025550881'));
 $al->testBeforeListMutationLockAcquire = function ($me) {
@@ -754,6 +787,7 @@ $al->testBeforeListMutationLockAcquire = function ($me) {
 check($al->listMemberDel(2, '2025550881') === false && $al->getLastError() !== '', 'listMemberDel after delete sets lastError');
 check(!isset($fp->astman->db['/allowlist-list/2/2025550881']), 'listMemberDel after delete removes no member key');
 $al->testBeforeListMutationLockAcquire = null;
+allowlistUnitUnlinkIfExists($memDelRaceLock);
 
 list($fp, $al) = freshHarness();
 $delPeerLock = sys_get_temp_dir() . '/allowlist-unit-delpeer-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
@@ -788,14 +822,14 @@ $al->testListMutationLockWaitSec = 0.35;
 $fp->astman->db['/allowlist/did/5550666'] = '1';
 $didHeld = fopen($delPeerLock, 'c+');
 check($didHeld !== false && flock($didHeld, LOCK_EX), 'test holds lock for didDelete timeout');
-check($al->didDelete('5550666', '') === false && $al->getListMutationLockFailureReason() === Allowlist::LIST_MUTATION_LOCK_FAILURE_BUSY, 'didDelete fails when lock not acquired');
+check($al->didDelete('5550666', '') === false && $al->getLastError() !== '', 'didDelete fails when lock not acquired');
 check(isset($fp->astman->db['/allowlist/did/5550666']), 'didDelete lock timeout keeps did mapping');
 flock($didHeld, LOCK_UN);
 fclose($didHeld);
 $fp->astman->db['/allowlist/autoadd/6'] = '1,0,10';
 $routeHeld = fopen($delPeerLock, 'c+');
 check($routeHeld !== false && flock($routeHeld, LOCK_EX), 'test holds lock for routeDelete timeout');
-check($al->routeDelete(6) === false && $al->getListMutationLockFailureReason() === Allowlist::LIST_MUTATION_LOCK_FAILURE_BUSY, 'routeDelete fails when lock not acquired');
+check($al->routeDelete(6) === false && $al->getLastError() !== '', 'routeDelete fails when lock not acquired');
 check(isset($fp->astman->db['/allowlist/autoadd/6']), 'routeDelete lock timeout keeps autoadd mapping');
 flock($routeHeld, LOCK_UN);
 fclose($routeHeld);
