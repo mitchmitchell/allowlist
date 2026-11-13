@@ -205,25 +205,88 @@ namespace GraphQLRelay {
 		{
 			return array();
 		}
+		private static function connectionArrayOffsetFromCursor($cursor)
+		{
+			if (!is_string($cursor) || $cursor === '')
+			{
+				return null;
+			}
+			$decoded = base64_decode($cursor);
+			if (!is_string($decoded) || !preg_match('/^arrayconnection:(\d+)$/', $decoded, $m))
+			{
+				return null;
+			}
+			return (int)$m[1];
+		}
+
+		private static function connectionArrayCursorFromOffset($offset)
+		{
+			return base64_encode('arrayconnection:' . (int)$offset);
+		}
+
 		public static function connectionFromArray($data, $args)
 		{
 			$total = count($data);
-			$first = isset($args['first']) ? (int)$args['first'] : $total;
-			if ($first < 0)
+			$from = 0;
+			$to = $total;
+			if (isset($args['after']))
 			{
-				$first = 0;
+				$after = self::connectionArrayOffsetFromCursor($args['after']);
+				if ($after !== null)
+				{
+					$from = $after + 1;
+				}
 			}
-			$slice = $first === 0 ? array() : array_slice($data, 0, $first);
+			if (isset($args['before']))
+			{
+				$before = self::connectionArrayOffsetFromCursor($args['before']);
+				if ($before !== null)
+				{
+					$to = $before;
+				}
+			}
+			if ($from > $to)
+			{
+				$from = $to;
+			}
+			$window = $to - $from;
+			if (isset($args['first']))
+			{
+				$first = (int)$args['first'];
+				if ($first < 0)
+				{
+					$first = 0;
+				}
+				$window = min($first, $window);
+			}
+			elseif (isset($args['last']))
+			{
+				$last = (int)$args['last'];
+				if ($last < 0)
+				{
+					$last = 0;
+				}
+				$window = min($last, $window);
+				$from = $to - $window;
+			}
+			$slice = $window > 0 ? array_slice($data, $from, $window) : array();
 			$edges = array();
-			foreach ($slice as $row)
+			foreach ($slice as $i => $row)
 			{
-				$edges[] = array('node' => $row, 'cursor' => '');
+				$offset = $from + $i;
+				$edges[] = array(
+					'node' => $row,
+					'cursor' => self::connectionArrayCursorFromOffset($offset),
+				);
 			}
+			$endOffset = $from + count($slice);
 			return array(
 				'edges' => $edges,
 				'pageInfo' => array(
-					'hasNextPage' => $total > count($slice),
-					'hasPreviousPage' => false,
+					'hasNextPage' => $endOffset < $to,
+					'hasPreviousPage' => $from > 0,
+					'startCursor' => count($edges) > 0 ? $edges[0]['cursor'] : null,
+					'endCursor' => count($edges) > 0 ? $edges[count($edges) - 1]['cursor'] : null,
 				),
 			);
 		}

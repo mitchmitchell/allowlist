@@ -24,6 +24,36 @@ namespace FreePBX\modules\Allowlist\Api\Gql {
 		}
 
 		/**
+		 * @return array<string, array<string, mixed>>
+		 */
+		public function writeMutationDefinitions()
+		{
+			$cb = $this->mutationCallback();
+			return $cb();
+		}
+
+		/**
+		 * @return array<string, mixed>
+		 */
+		public function resolveMutationOutputFields($mutationName, $payload)
+		{
+			$defs = $this->writeMutationDefinitions();
+			if (!isset($defs[$mutationName]['outputFields']))
+			{
+				return array();
+			}
+			$out = array();
+			foreach ($defs[$mutationName]['outputFields'] as $fieldName => $def)
+			{
+				if (isset($def['resolve']))
+				{
+					$out[$fieldName] = $def['resolve']($payload);
+				}
+			}
+			return $out;
+		}
+
+		/**
 		 * @return array<string, callable>
 		 */
 		public function readQueryResolvers()

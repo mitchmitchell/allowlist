@@ -442,7 +442,7 @@ class Allowlist extends Base {
 				}),
 				'name' => [
 					'type' => Type::nonNull(Type::string()),
-					'description' => _('Display name'),
+					'description' => _('List name as stored (raw, unescaped); escape before showing in HTML.'),
 					'resolve' => function ($row) {
 						return isset($row['name']) ? $row['name'] : '';
 					}
