@@ -7,9 +7,60 @@ use GraphQL\Type\Definition\Type;
 use FreePBX\modules\Api\Gql\Base;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Error\UserError;
+use FreePBX\modules\Allowlist as AllowlistModule;
 
 class Allowlist extends Base {
 	protected $module = 'allowlist';
+
+	/**
+	 * @return int
+	 */
+	private function resolveMemberListIdArg($raw, $required = false)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		if ($raw === null || $raw === '')
+		{
+			if ($required)
+			{
+				throw new UserError(_('Unknown allowlist.'));
+			}
+			return AllowlistModule::DEFAULT_LIST_ID;
+		}
+		$id = AllowlistModule::parseListIdValue($raw);
+		if ($id === false || !$allowlist->listExists($id))
+		{
+			throw new UserError(_('Unknown allowlist.'));
+		}
+		return $id;
+	}
+
+	/**
+	 * @return int|null
+	 */
+	private function resolveRouteListIdArg($raw)
+	{
+		if ($raw === null || $raw === '')
+		{
+			return null;
+		}
+		$allowlist = $this->freepbx->Allowlist;
+		$id = AllowlistModule::parseListIdValue($raw);
+		if ($id === false || !$allowlist->listExists($id))
+		{
+			throw new UserError(_('Unknown allowlist.'));
+		}
+		return $id;
+	}
+
+	private function memberRowsForGraphql($listId)
+	{
+		$rows = $this->freepbx->Allowlist->listMemberGetAll($listId);
+		foreach ($rows as $i => $row)
+		{
+			$rows[$i]['listId'] = $listId;
+		}
+		return $rows;
+	}
 
 	public function mutationCallback() {
 		if($this->checkAllWriteScope()) {
@@ -26,6 +77,10 @@ class Allowlist extends Base {
 							'description' => [
 								'type' => Type::string(),
 								'description' => _('Optional label for the number')
+							],
+							'listId' => [
+								'type' => Type::id(),
+								'description' => _('Allowlist to add to (defaults to the default list)')
 							]
 						],
 						'outputFields' => [
@@ -38,14 +93,20 @@ class Allowlist extends Base {
 						],
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
+							$listId = $this->resolveMemberListIdArg(isset($input['listId']) ? $input['listId'] : null);
 							$entry = $allowlist->checkEntry([
 								'number' => isset($input['number']) ? $input['number'] : null,
 								'description' => isset($input['description']) ? $input['description'] : null,
 							]);
-							if (!$entry || !$allowlist->numberAdd($entry)) {
+							if (!$entry || !$allowlist->listMemberAdd($listId, $entry)) {
 								throw new UserError($allowlist->getLastError());
 							}
-							return $allowlist->findNumber($entry['number']);
+							$row = $allowlist->findListMember($listId, $entry['number']);
+							if ($row === null) {
+								throw new UserError(_('Could not load the allowlist entry after adding it.'));
+							}
+							$row['listId'] = $listId;
+							return $row;
 						}
 					]),
 					'removeAllowlist' => Relay::mutationWithClientMutationId([
@@ -55,6 +116,10 @@ class Allowlist extends Base {
 							'number' => [
 								'type' => Type::nonNull(Type::string()),
 								'description' => _('Number to remove from the allowlist')
+							],
+							'listId' => [
+								'type' => Type::id(),
+								'description' => _('Allowlist to remove from (defaults to the default list)')
 							]
 						],
 						'outputFields' => [
@@ -67,10 +132,223 @@ class Allowlist extends Base {
 						],
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
-							if (!$allowlist->numberDel(isset($input['number']) ? $input['number'] : null)) {
+							$listId = $this->resolveMemberListIdArg(isset($input['listId']) ? $input['listId'] : null);
+							if (!$allowlist->listMemberDel($listId, isset($input['number']) ? $input['number'] : null)) {
 								throw new UserError($allowlist->getLastError());
 							}
-							return ['id' => $input['number']];
+							$localId = AllowlistModule::formatGqlAllowlistNodeLocalId($listId, isset($input['number']) ? $input['number'] : '');
+							return ['id' => $localId !== false ? $localId : ''];
+						}
+					]),
+					'addAllowlistList' => Relay::mutationWithClientMutationId([
+						'name' => 'addAllowlistList',
+						'description' => _('Create a new named allowlist'),
+						'inputFields' => [
+							'name' => [
+								'type' => Type::nonNull(Type::string()),
+								'description' => _('Display name for the new allowlist')
+							]
+						],
+						'outputFields' => [
+							'allowlistList' => [
+								'type' => $this->typeContainer->get('allowlistList')->getObject(),
+								'resolve' => function ($payload) {
+									return $payload;
+								}
+							]
+						],
+						'mutateAndGetPayload' => function ($input) {
+							$allowlist = $this->freepbx->Allowlist;
+							$listId = $allowlist->listCreate(isset($input['name']) ? $input['name'] : '');
+							if ($listId === false) {
+								throw new UserError($allowlist->getLastError());
+							}
+							$summary = $allowlist->summarizeAllowlistsForGraphql();
+							foreach ($summary as $row)
+							{
+								if ((int)$row['id'] === (int)$listId)
+								{
+									return $row;
+								}
+							}
+							throw new UserError(_('Could not load the allowlist after creating it.'));
+						}
+					]),
+					'renameAllowlistList' => Relay::mutationWithClientMutationId([
+						'name' => 'renameAllowlistList',
+						'description' => _('Rename an allowlist'),
+						'inputFields' => [
+							'id' => [
+								'type' => Type::nonNull(Type::id()),
+								'description' => _('Allowlist id')
+							],
+							'name' => [
+								'type' => Type::nonNull(Type::string()),
+								'description' => _('New display name')
+							]
+						],
+						'outputFields' => [
+							'allowlistList' => [
+								'type' => $this->typeContainer->get('allowlistList')->getObject(),
+								'resolve' => function ($payload) {
+									return $payload;
+								}
+							]
+						],
+						'mutateAndGetPayload' => function ($input) {
+							$allowlist = $this->freepbx->Allowlist;
+							$listId = $this->resolveMemberListIdArg(isset($input['id']) ? $input['id'] : null, true);
+							if (!$allowlist->listRename($listId, isset($input['name']) ? $input['name'] : '')) {
+								throw new UserError($allowlist->getLastError());
+							}
+							$summary = $allowlist->summarizeAllowlistsForGraphql();
+							foreach ($summary as $row)
+							{
+								if ((int)$row['id'] === (int)$listId)
+								{
+									return $row;
+								}
+							}
+							throw new UserError(_('Could not load the allowlist after renaming it.'));
+						}
+					]),
+					'removeAllowlistList' => Relay::mutationWithClientMutationId([
+						'name' => 'removeAllowlistList',
+						'description' => _('Delete a named allowlist'),
+						'inputFields' => [
+							'id' => [
+								'type' => Type::nonNull(Type::id()),
+								'description' => _('Allowlist id')
+							]
+						],
+						'outputFields' => [
+							'deletedId' => [
+								'type' => Type::nonNull(Type::id()),
+								'resolve' => function ($payload) {
+									return $payload['id'];
+								}
+							]
+						],
+						'mutateAndGetPayload' => function ($input) {
+							$allowlist = $this->freepbx->Allowlist;
+							$listId = $this->resolveMemberListIdArg(isset($input['id']) ? $input['id'] : null, true);
+							if (!$allowlist->listDelete($listId)) {
+								throw new UserError($allowlist->getLastError());
+							}
+							return ['id' => (string)$listId];
+						}
+					]),
+					'setInboundRouteAllowlist' => Relay::mutationWithClientMutationId([
+						'name' => 'setInboundRouteAllowlist',
+						'description' => _('Assign allowlist screening to an inbound route, or turn screening off'),
+						'inputFields' => [
+							'did' => [
+								'type' => Type::nonNull(Type::string()),
+								'description' => _('Inbound route DID')
+							],
+							'cid' => [
+								'type' => Type::string(),
+								'description' => _('Inbound route caller ID match (may be empty)')
+							],
+							'listId' => [
+								'type' => Type::id(),
+								'description' => _('Allowlist id, or omit/null to turn screening off')
+							]
+						],
+						'outputFields' => [
+							'listId' => [
+								'type' => Type::id(),
+								'description' => _('Assigned allowlist id, or null when screening is off'),
+								'resolve' => function ($payload) {
+									return $payload['listId'];
+								}
+							]
+						],
+						'mutateAndGetPayload' => function ($input) {
+							$allowlist = $this->freepbx->Allowlist;
+							$did = isset($input['did']) ? (string)$input['did'] : '';
+							$cid = isset($input['cid']) ? (string)$input['cid'] : '';
+							if (!AllowlistModule::validDidCid($did, $cid))
+							{
+								throw new UserError(_('DID and caller ID may only contain digits, + and dial-pattern characters.'));
+							}
+							if (!$allowlist->inboundRouteExistsInCore($did, $cid))
+							{
+								throw new UserError(_('Inbound route not found.'));
+							}
+							$listId = $this->resolveRouteListIdArg(array_key_exists('listId', $input) ? $input['listId'] : null);
+							if ($listId === null)
+							{
+								if (!$allowlist->didDelete($did, $cid))
+								{
+									throw new UserError($allowlist->getLastError());
+								}
+								$allowlist->logGraphqlInboundRouteAllowlistChange($did, $cid, null);
+								return ['listId' => null];
+							}
+							if (!$allowlist->didAdd($did, $cid, $listId))
+							{
+								throw new UserError($allowlist->getLastError());
+							}
+							$allowlist->logGraphqlInboundRouteAllowlistChange($did, $cid, $listId);
+							return ['listId' => (string)$listId];
+						}
+					]),
+					'setOutboundRouteAllowlist' => Relay::mutationWithClientMutationId([
+						'name' => 'setOutboundRouteAllowlist',
+						'description' => _('Assign allowlist auto-add to an outbound route, or turn it off'),
+						'inputFields' => [
+							'routeId' => [
+								'type' => Type::nonNull(Type::id()),
+								'description' => _('Outbound route id')
+							],
+							'listId' => [
+								'type' => Type::id(),
+								'description' => _('Allowlist id, or omit/null to turn auto-add off')
+							],
+							'remove' => [
+								'type' => Type::nonNull(Type::int()),
+								'description' => _('Digits to remove from the start of dialed numbers')
+							],
+							'store' => [
+								'type' => Type::nonNull(Type::int()),
+								'description' => _('Minimum stored number length for auto-add')
+							]
+						],
+						'outputFields' => [
+							'listId' => [
+								'type' => Type::id(),
+								'description' => _('Assigned allowlist id, or null when auto-add is off'),
+								'resolve' => function ($payload) {
+									return $payload['listId'];
+								}
+							]
+						],
+						'mutateAndGetPayload' => function ($input) {
+							$allowlist = $this->freepbx->Allowlist;
+							$routeId = isset($input['routeId']) ? $input['routeId'] : null;
+							if (!is_scalar($routeId) || !preg_match('/^[0-9]{1,6}$/D', (string)$routeId))
+							{
+								throw new UserError(_('Invalid outbound route id.'));
+							}
+							$listId = $this->resolveRouteListIdArg(array_key_exists('listId', $input) ? $input['listId'] : null);
+							if ($listId === null)
+							{
+								if (!$allowlist->routeDelete((int)$routeId))
+								{
+									throw new UserError($allowlist->getLastError());
+								}
+								$allowlist->logGraphqlOutboundRouteAllowlistChange((int)$routeId, null);
+								return ['listId' => null];
+							}
+							$remove = isset($input['remove']) ? $input['remove'] : null;
+							$store = isset($input['store']) ? $input['store'] : null;
+							if (!$allowlist->routeAdd((int)$routeId, $remove, $store, $listId))
+							{
+								throw new UserError($allowlist->getLastError());
+							}
+							$allowlist->logGraphqlOutboundRouteAllowlistChange((int)$routeId, $listId);
+							return ['listId' => (string)$listId];
 						}
 					])
 				];
@@ -85,9 +363,18 @@ class Allowlist extends Base {
 					'allAllowlists' => [
 						'type' => $this->typeContainer->get('allowlist')->getConnectionType(),
 						'description' => _('Used to manage a system wide list of allowed callers'),
-						'args' => Relay::connectionArgs(),
+						'args' => array_merge(Relay::connectionArgs(), [
+							'listId' => [
+								'type' => Type::id(),
+								'description' => _('Allowlist to query (defaults to the default list)')
+							]
+						]),
 						'resolve' => function($root, $args) {
-							return Relay::connectionFromArray($this->freepbx->Allowlist->getAllowlist(), $args);
+							$listId = $this->resolveMemberListIdArg(isset($args['listId']) ? $args['listId'] : null);
+							$data = $this->memberRowsForGraphql($listId);
+							$conn = Relay::connectionFromArray($data, $args);
+							$conn['allowlistQueryListId'] = $listId;
+							return $conn;
 						},
 					],
 					'allowlist' => [
@@ -102,7 +389,20 @@ class Allowlist extends Base {
 							if (!isset($args['id'])) {
 								return null;
 							}
-							return $this->freepbx->Allowlist->findNumber(Relay::fromGlobalId($args['id'])['id']);
+							$relay = Relay::fromGlobalId($args['id']);
+							$localId = isset($relay['id']) ? $relay['id'] : '';
+							$parsed = AllowlistModule::parseGqlAllowlistNodeLocalId($localId);
+							if ($parsed === false)
+							{
+								return null;
+							}
+							$row = $this->freepbx->Allowlist->findListMember($parsed['listId'], $parsed['number']);
+							if ($row === null)
+							{
+								return null;
+							}
+							$row['listId'] = $parsed['listId'];
+							return $row;
 						}
 					],
 					'allowlistSettings' => [
@@ -110,6 +410,14 @@ class Allowlist extends Base {
 						'description' => _('Allowlist Settings'),
 						'resolve' => function($root, $args) {
 							return []; //trick the resolver into not thinking this is null
+						}
+					],
+					'allowlistLists' => [
+						'type' => $this->typeContainer->get('allowlistList')->getConnectionType(),
+						'description' => _('Named and default allowlists with route assignments'),
+						'args' => Relay::connectionArgs(),
+						'resolve' => function($root, $args) {
+							return Relay::connectionFromArray($this->freepbx->Allowlist->summarizeAllowlistsForGraphql(), $args);
 						}
 					]
 				];
@@ -139,6 +447,47 @@ class Allowlist extends Base {
 			];
 		});
 
+		$listType = $this->typeContainer->create('allowlistList', 'object');
+		$listType->setDescription(_('An allowlist (default or named)'));
+		$listType->addFieldCallback(function() {
+			return [
+				'id' => Relay::globalIdField('allowlistList', function ($row) {
+					return (string)$row['id'];
+				}),
+				'name' => [
+					'type' => Type::nonNull(Type::string()),
+					'description' => _('Display name'),
+					'resolve' => function ($row) {
+						return AllowlistModule::formatListNameForDisplay(isset($row['name']) ? $row['name'] : '');
+					}
+				],
+				'memberCount' => [
+					'type' => Type::nonNull(Type::int()),
+					'description' => _('Number of members on this list'),
+					'resolve' => function ($row) {
+						return isset($row['memberCount']) ? (int)$row['memberCount'] : 0;
+					}
+				],
+				'inboundRoutes' => [
+					'type' => Type::nonNull(Type::listOf(Type::nonNull(Type::string()))),
+					'description' => _('Inbound routes using this list for screening'),
+					'resolve' => function ($row) {
+						return isset($row['inboundRoutes']) ? $row['inboundRoutes'] : array();
+					}
+				],
+				'outboundRoutes' => [
+					'type' => Type::nonNull(Type::listOf(Type::nonNull(Type::string()))),
+					'description' => _('Outbound routes using this list for auto-add'),
+					'resolve' => function ($row) {
+						return isset($row['outboundRoutes']) ? $row['outboundRoutes'] : array();
+					}
+				]
+			];
+		});
+		$listType->setConnectionResolveNode(function ($edge) {
+			return $edge['node'];
+		});
+
 		$user = $this->typeContainer->create('allowlist');
 		$user->setDescription(_('Used to manage a system wide list of allowed callers'));
 
@@ -147,13 +496,26 @@ class Allowlist extends Base {
 		});
 
 		$user->setGetNodeCallback(function($id) {
-			return $this->freepbx->Allowlist->findNumber($id);
+			$parsed = AllowlistModule::parseGqlAllowlistNodeLocalId($id);
+			if ($parsed === false)
+			{
+				return null;
+			}
+			$row = $this->freepbx->Allowlist->findListMember($parsed['listId'], $parsed['number']);
+			if ($row === null)
+			{
+				return null;
+			}
+			$row['listId'] = $parsed['listId'];
+			return $row;
 		});
 
 		$user->addFieldCallback(function() {
 			return [
 				'id' => Relay::globalIdField('allowlist', function($row) {
-					return $row['number'];
+					$listId = isset($row['listId']) ? $row['listId'] : AllowlistModule::DEFAULT_LIST_ID;
+					$localId = AllowlistModule::formatGqlAllowlistNodeLocalId($listId, $row['number']);
+					return $localId !== false ? $localId : '';
 				}),
 				'number' => [
 					'type' => Type::string(),
@@ -175,7 +537,10 @@ class Allowlist extends Base {
 				'totalCount' => [
 					'type' => Type::int(),
 					'resolve' => function($value) {
-						return count($this->freepbx->Allowlist->getAllowlist());
+						$listId = isset($value['allowlistQueryListId'])
+							? $value['allowlistQueryListId']
+							: AllowlistModule::DEFAULT_LIST_ID;
+						return count($this->freepbx->Allowlist->listMemberGetAll($listId));
 					}
 				],
 				'allowlists' => [

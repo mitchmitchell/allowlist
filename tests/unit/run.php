@@ -149,8 +149,12 @@ check(Allowlist::findInList(array(array('number' => '1000', 'description' => 'a'
 check(Allowlist::findInList($list, '2025550111')['description'] === 'b', 'known number found');
 check(Allowlist::findInList($list, array()) === null, 'non-scalar id returns null');
 $gql = file_get_contents($root . '/Api/Gql/Allowlist.php');
-check(strpos($gql, 'array_search') === false && substr_count($gql, '->findNumber(') === 3, 'GraphQL uses the strict helper at all three call sites');
+check(strpos($gql, 'array_search') === false && substr_count($gql, '->findListMember(') >= 3, 'GraphQL uses findListMember for strict entry lookup');
 check(strpos($gql, 'numberAdd($input)') === false && strpos($gql, 'UserError') !== false, 'GraphQL passes explicit args and returns a user error on rejection');
+check(strpos($gql, 'allowlistLists') !== false && strpos($gql, 'setInboundRouteAllowlist') !== false, 'GraphQL exposes multi-list queries and route mutations');
+check(preg_match('/checkAllWriteScope\(\)\)[\s\S]*addAllowlistList/', $gql) === 1, 'list/route GraphQL mutations sit behind checkAllWriteScope');
+check(preg_match('/checkAllReadScope\(\)\)[\s\S]*allowlistLists/', $gql) === 1, 'allowlistLists sits behind checkAllReadScope');
+check(substr_count($gql, "'addAllowlistList' =>") === 1, 'addAllowlistList defined once (write scope gate)');
 
 // ---- A5: destination registry (SEC-06)
 list($fp, $al) = fresh();
@@ -1018,6 +1022,44 @@ $putAgi = new RecAutoaddAGI();
 $done = allowlistMemberPut($putAgi, 2, '2025550400', 'automatically added');
 check($done['result'] === 1 && $putAgi->puts[0][0] === 'allowlist-list' && $putAgi->puts[0][1] === '2/2025550400', 'autoadd member put uses allowlist-list for named lists');
 unset($allowlist_test_audit_logs);
+
+// --- GraphQL multi-list helpers (PR-C) -------------------------------------
+check(Allowlist::formatGqlAllowlistNodeLocalId(1, '2025550998') === '2025550998', 'GQL default-list node id is bare number');
+check(Allowlist::formatGqlAllowlistNodeLocalId(2, '2025550999') === '2:2025550999', 'GQL named-list node id is listId:number');
+check(Allowlist::parseGqlAllowlistNodeLocalId('2:2025550999') === array('listId' => 2, 'number' => '2025550999'), 'GQL parse named-list node id');
+check(Allowlist::parseGqlAllowlistNodeLocalId('2025550998') === array('listId' => 1, 'number' => '2025550998'), 'GQL parse default-list bare node id');
+check(Allowlist::parseGqlAllowlistNodeLocalId('1:2025550999') === false, 'GQL rejects composite id for list 1');
+foreach (array('0', '-1', '1;Hangup', '2/../x') as $badListInNode) {
+	check(Allowlist::parseGqlAllowlistNodeLocalId($badListInNode . ':2025550100') === false, 'GQL node id rejects bad list part ' . json_encode($badListInNode));
+}
+list($fp, $al) = fresh();
+$gqlListId = $al->listCreate('GraphQL');
+check($gqlListId === 2, 'GQL list tests allocate list 2');
+check($al->listCreate(str_repeat('n', 65)) === false, 'GQL listCreate rejects oversized name');
+check($al->listCreate("New\nLine") === false, 'GQL listCreate rejects newline in name');
+check($al->listDelete(1) === false && $al->getLastError() !== '', 'GQL listDelete rejects default list');
+$al->didAdd('5550777', '', 2);
+check($al->listDelete(2) === false && strpos($al->getLastError(), 'assigned') !== false, 'GQL listDelete rejects list still assigned to routes');
+$al->listMemberAdd(2, array('number' => '2025550777', 'description' => 'gql'));
+$row = $al->findListMember(2, '2025550777');
+check($row !== null && $row['description'] === 'gql' && $al->findListMember(2, '2025550000') === null, 'findListMember strict lookup on named list');
+$roundTrip = Allowlist::formatGqlAllowlistNodeLocalId(2, '2025550777');
+$parsed = Allowlist::parseGqlAllowlistNodeLocalId($roundTrip);
+check($parsed['listId'] === 2 && $parsed['number'] === '2025550777' && $al->findListMember($parsed['listId'], $parsed['number']) !== null, 'named-list GQL node id round-trip resolves member');
+$al->auditEntries = array();
+$al->logGraphqlInboundRouteAllowlistChange('5550777', '', 2);
+$inAudit = implode("\n", $al->auditEntries);
+check(strpos($inAudit, '5550777') === false && strpos($inAudit, 'list 2') !== false, 'GraphQL inbound route audit masks DID');
+check($al->listExists(88) === false, 'nonexistent list id for GraphQL resolve');
+$sums = $al->summarizeAllowlistsForGraphql();
+$defaultRow = null;
+foreach ($sums as $sumRow) {
+	if ((int)($sumRow['id'] ?? 0) === 1) {
+		$defaultRow = $sumRow;
+		break;
+	}
+}
+check($defaultRow !== null && $defaultRow['name'] === 'Default', 'summarizeAllowlistsForGraphql includes default list');
 
 if (!function_exists('core_did_list')) {
 	function core_did_list() {

@@ -229,6 +229,151 @@ class Allowlist implements BMO
         return self::findInList($this->getAllowlist(), $number);
     }
 
+    /**
+     * @return array|null Row with number and description
+     */
+    public function findListMember($listId, $number)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            return null;
+        }
+        return self::findInList($this->listMemberGetAll($id), $number);
+    }
+
+    /**
+     * Relay local id for an allowlist entry node (list 1 uses the bare number).
+     *
+     * @return string|false
+     */
+    public static function formatGqlAllowlistNodeLocalId($listId, $number)
+    {
+        $id = self::parseListIdValue($listId);
+        $n = self::normalizeNumber($number);
+        if ($id === false || $n === false)
+        {
+            return false;
+        }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            return $n;
+        }
+        return $id . ':' . $n;
+    }
+
+    /**
+     * @return array{listId:int,number:string}|false
+     */
+    public static function parseGqlAllowlistNodeLocalId($localId)
+    {
+        if (!is_string($localId) || $localId === '')
+        {
+            return false;
+        }
+        $colon = strpos($localId, ':');
+        if ($colon === false)
+        {
+            $n = self::normalizeNumber($localId);
+            if ($n === false)
+            {
+                return false;
+            }
+            return array('listId' => self::DEFAULT_LIST_ID, 'number' => $n);
+        }
+        $listPart = substr($localId, 0, $colon);
+        $numPart = substr($localId, $colon + 1);
+        $listId = self::parseListIdValue($listPart);
+        if ($listId === false || $listId === self::DEFAULT_LIST_ID)
+        {
+            return false;
+        }
+        $n = self::normalizeNumber($numPart);
+        if ($n === false)
+        {
+            return false;
+        }
+        return array('listId' => $listId, 'number' => $n);
+    }
+
+    /**
+     * @param  array $item Row from core_did_list()
+     */
+    public static function coreDidRouteMatches($did, $cid, $item)
+    {
+        if (!is_array($item))
+        {
+            return false;
+        }
+        $wantExt = is_string($did) ? trim($did) : '';
+        $wantCid = is_string($cid) ? trim($cid) : '';
+        $itemExt = trim((string)($item['extension'] ?? ''));
+        $itemCid = trim((string)($item['cidnum'] ?? ''));
+        return $itemExt === $wantExt && $itemCid === $wantCid;
+    }
+
+    public function inboundRouteExistsInCore($did, $cid)
+    {
+        if (!self::validDidCid($did, $cid) || !function_exists('core_did_list'))
+        {
+            return false;
+        }
+        $list = core_did_list();
+        if (!is_array($list))
+        {
+            return false;
+        }
+        foreach ($list as $item)
+        {
+            if (self::coreDidRouteMatches($did, $cid, $item))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function logGraphqlInboundRouteAllowlistChange($did, $cid, $listIdOrNull)
+    {
+        $exten = $did . ($cid === '' ? '' : '/' . $cid);
+        if ($listIdOrNull === null)
+        {
+            $this->auditLog('Allowlist GraphQL: inbound route screening disabled at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
+            return;
+        }
+        $this->auditLog('Allowlist GraphQL: inbound route screening set to list ' . (int)$listIdOrNull . ' at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
+    }
+
+    public function logGraphqlOutboundRouteAllowlistChange($routeId, $listIdOrNull)
+    {
+        if ($listIdOrNull === null)
+        {
+            $this->auditLog('Allowlist GraphQL: outbound route auto-add disabled for route ' . (int)$routeId);
+            return;
+        }
+        $this->auditLog('Allowlist GraphQL: outbound route auto-add assigned to list ' . (int)$listIdOrNull . ' for route ' . (int)$routeId);
+    }
+
+    /**
+     * @return array<int, array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}>
+     */
+    public function summarizeAllowlistsForGraphql()
+    {
+        $out = array();
+        foreach ($this->listGetAll() as $id => $name)
+        {
+            $uses = $this->listRoutesUsingList($id);
+            $out[] = array(
+                'id' => $id,
+                'name' => $name,
+                'memberCount' => count($this->listMemberGetAll($id)),
+                'inboundRoutes' => $uses['inbound'],
+                'outboundRoutes' => $uses['outbound'],
+            );
+        }
+        return $out;
+    }
+
     /** Message for the last rejected numberAdd/numberDel/numberBlock/destinationSet call. */
     public function getLastError()
     {
