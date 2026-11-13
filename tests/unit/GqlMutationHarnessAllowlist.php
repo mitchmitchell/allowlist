@@ -22,5 +22,33 @@ namespace FreePBX\modules\Allowlist\Api\Gql {
 			}
 			return $out;
 		}
+
+		/**
+		 * @return array<string, callable>
+		 */
+		public function readQueryResolvers()
+		{
+			$cb = $this->queryCallback();
+			if ($cb === null)
+			{
+				return array();
+			}
+			$defs = $cb();
+			$out = array();
+			foreach ($defs as $name => $def)
+			{
+				if (isset($def['resolve']))
+				{
+					$out[$name] = $def['resolve'];
+				}
+			}
+			return $out;
+		}
+
+		public function invokeAllowlistGetNode($localId)
+		{
+			$this->initializeTypes();
+			return $this->typeContainer->get('allowlist')->invokeGetNode($localId);
+		}
 	}
 }

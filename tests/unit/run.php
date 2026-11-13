@@ -131,6 +131,17 @@ function allowlistUnitGqlMutationFieldTypesBody($gql, $mutationName) {
 function allowlistUnitNormalizePhpSnippet($snippet) {
 	return trim(preg_replace('/\s+/', ' ', $snippet));
 }
+/**
+ * @return array{ok:bool,result:mixed,error:string}
+ */
+function allowlistUnitGqlInvokeExtractor($gqlHarness, $method, array $input) {
+	try {
+		$result = $gqlHarness->$method($input);
+		return array('ok' => true, 'result' => $result, 'error' => '');
+	} catch (\GraphQL\Error\UserError $e) {
+		return array('ok' => false, 'result' => null, 'error' => $e->getMessage());
+	}
+}
 function allowlistUnitGqlMutateDelegationExpected($mutationName) {
 	$map = array(
 		'addAllowlist' => 'gqlMutateAddAllowlist',
@@ -278,6 +289,8 @@ check(preg_match('/checkAllReadScope\(\)\)[\s\S]*allowlistLists/', $gql) === 1, 
 check(substr_count($gql, "'addAllowlistList' =>") === 1, 'addAllowlistList defined once (write scope gate)');
 $alSrc = file_get_contents($root . '/Allowlist.class.php');
 check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlAddAllowlistMember', 'findListMember'), 'applyGraphqlAddAllowlistMember reloads entry via findListMember');
+check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlAddAllowlistMember', 'listMemberAdd'), 'applyGraphqlAddAllowlistMember checks listMemberAdd result');
+check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlRemoveAllowlistList', 'listDelete'), 'applyGraphqlRemoveAllowlistList checks listDelete result');
 $removeMemberApply = allowlistUnitExtractFunctionBody($alSrc, 'applyGraphqlRemoveAllowlistMember');
 check(strpos($removeMemberApply, 'DEFAULT_LIST_ID') !== false && strpos($removeMemberApply, 'listMemberDel') < strpos($removeMemberApply, 'checkEntry'), 'applyGraphqlRemoveAllowlistMember skips checkEntry on default list');
 check(strpos($removeMemberApply, 'checkEntry') !== false && strpos($removeMemberApply, 'checkEntry') < strrpos($removeMemberApply, 'listMemberDel'), 'applyGraphqlRemoveAllowlistMember validates named-list entry before delete');
@@ -1248,10 +1261,26 @@ check($addedGql !== false && $addedGql['listId'] === 1 && $al->findListMember(1,
 $fp->astman->failPut = true;
 check($al->applyGraphqlAddAllowlistMember(null, '2025553344', 'fail-write') === false && $al->findListMember(1, '2025553344') === null, 'applyGraphqlAddAllowlistMember rejects without success when listMemberAdd write fails');
 $fp->astman->failPut = false;
+$al->listMemberAdd(1, array('number' => '2025553355', 'description' => 'keep-desc'));
+$fp->astman->failPut = true;
+check($al->applyGraphqlAddAllowlistMember(null, '2025553355', 'new-desc') === false && $al->findListMember(1, '2025553355')['description'] === 'keep-desc', 'applyGraphqlAddAllowlistMember write failure on existing number does not report success');
+$fp->astman->failPut = false;
 $removedGql = $al->applyGraphqlRemoveAllowlistMember(null, '2025553333');
 check($removedGql !== false && $removedGql['id'] === '2025553333' && $al->findListMember(1, '2025553333') === null, 'applyGraphqlRemoveAllowlistMember default list returns plain number deletedId');
 $removedLegacyKey = $al->applyGraphqlRemoveAllowlistMember(null, 'sipuser');
 check($removedLegacyKey !== false && $removedLegacyKey['id'] === 'sipuser' && $al->findListMember(1, 'sipuser') === null, 'applyGraphqlRemoveAllowlistMember list 1 removes legacy sipuser and returns sipuser deletedId');
+$fp->astman->db['/allowlist/sipuser'] = 'legacy';
+$fp->astman->db['/allowlist/02025550177'] = 'zero-pad';
+$padInput = '02025550177';
+check($al->numberDel($padInput) === true && !isset($fp->astman->db['/allowlist/02025550177']), 'numberDel removes zero-padded allowlist key');
+$fp->astman->db['/allowlist/02025550177'] = 'zero-pad';
+$padRemoved = $al->applyGraphqlRemoveAllowlistMember(null, $padInput);
+check($padRemoved !== false && $padRemoved['id'] === $padInput && !isset($fp->astman->db['/allowlist/02025550177']), 'applyGraphqlRemoveAllowlistMember list 1 preserves zero-padded input as deletedId');
+foreach (array('dest', '', '.../x') as $badRemoveList1) {
+	$al->numberDel($badRemoveList1);
+	$baseRemoveErr = $al->getLastError();
+	check($al->applyGraphqlRemoveAllowlistMember(null, $badRemoveList1) === false && $al->getLastError() === $baseRemoveErr, 'applyGraphqlRemoveAllowlistMember list 1 error matches numberDel for ' . json_encode($badRemoveList1));
+}
 $fp->astman->db['/allowlist/sipuser'] = 'legacy';
 $al->listMemberAdd(2, array('number' => '2025554444', 'description' => 'list2-only'));
 check($al->applyGraphqlRemoveAllowlistMember('2', 'not-a-phone;') === false && $al->findListMember(2, '2025554444') !== null, 'applyGraphqlRemoveAllowlistMember rejects invalid named-list number before delete');
@@ -1422,6 +1451,44 @@ $fpHarness->astman->failPut = true;
 $closureAddWriteFail = allowlistUnitGqlRunMutation($gqlHarness, 'addAllowlist', array('number' => '2025558300', 'description' => 'write-fail'));
 check(!$closureAddWriteFail['ok'] && $alHarness->findListMember(1, '2025558300') === null, 'GQL addAllowlist closure rejects when underlying write fails');
 $fpHarness->astman->failPut = false;
+foreach (array(
+	'removeAllowlist' => $closureBadRemove,
+	'addAllowlistList' => $closureBadAddList,
+	'renameAllowlistList' => $closureBadRename,
+	'removeAllowlistList' => $closureBadRemoveList,
+	'setInboundRouteAllowlist' => $closureBadInbound,
+	'setOutboundRouteAllowlist' => $closureOutboundGuard,
+) as $failMut => $failRes) {
+	check(!$failRes['ok'] && $failRes['error'] !== '', 'GQL ' . $failMut . ' failure returns UserError message');
+}
+$extractorAddNullList = allowlistUnitGqlInvokeExtractor($gqlHarness, 'gqlMutateAddAllowlist', array('number' => '2025558400', 'listId' => null, 'description' => 'null-list'));
+check($extractorAddNullList['ok'] && $alHarness->findListMember(1, '2025558400') !== null, 'gqlMutateAddAllowlist treats null listId as default list');
+$alHarness->listMemberDel(1, '2025558400');
+$fpHarness->astman->db['/allowlist/sipuser'] = 'legacy';
+$extractorRemoveNullList = allowlistUnitGqlInvokeExtractor($gqlHarness, 'gqlMutateRemoveAllowlist', array('number' => 'sipuser', 'listId' => null));
+check($extractorRemoveNullList['ok'] && $extractorRemoveNullList['result']['id'] === 'sipuser', 'gqlMutateRemoveAllowlist null listId returns bare deletedId on default list');
+$fpHarness->astman->db['/allowlist/sipuser'] = 'legacy';
+$alHarness->listMemberAdd(2, array('number' => '2025558500', 'description' => 'extractor'));
+$extractorRemoveNamed = allowlistUnitGqlInvokeExtractor($gqlHarness, 'gqlMutateRemoveAllowlist', array('number' => '2025558500', 'listId' => '2'));
+check($extractorRemoveNamed['ok'] && $extractorRemoveNamed['result']['id'] === '2:2025558500', 'gqlMutateRemoveAllowlist formats named-list deletedId');
+$extractorInboundOmit = allowlistUnitGqlInvokeExtractor($gqlHarness, 'gqlMutateSetInboundRouteAllowlist', array('did' => '5550888', 'cid' => ''));
+check(!$extractorInboundOmit['ok'] && isset($fpHarness->astman->db['/allowlist/did/5550888']), 'gqlMutateSetInboundRouteAllowlist omitted listId leaves screening unchanged');
+$alHarness->listMemberAdd(2, array('number' => '2025558600', 'description' => 'q-filter-a'));
+$alHarness->listMemberAdd(1, array('number' => '2025558601', 'description' => 'q-filter-b'));
+$gqlQueries = $gqlHarness->readQueryResolvers();
+$connList2 = $gqlQueries['allAllowlists'](null, array('listId' => '2', 'first' => 50));
+$list2Numbers = array_map(function ($edge) {
+	return $edge['node']['number'];
+}, $connList2['edges']);
+check(!in_array('2025558601', $list2Numbers, true) && in_array('2025558600', $list2Numbers, true), 'allAllowlists listId filters members to list 2');
+$badNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:../x')));
+check($badNode === null, 'allowlist query resolve rejects unparseable node id');
+$goodNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:2:2025558600')));
+check($goodNode !== null && (int)$goodNode['listId'] === 2, 'allowlist query resolve returns named-list member');
+check($gqlHarness->invokeAllowlistGetNode('../x') === null, 'allowlist getNode rejects unparseable local id');
+check($gqlHarness->invokeAllowlistGetNode('2:2025558600') !== null, 'allowlist getNode resolves named-list member');
+$extractorOutboundRawList = allowlistUnitGqlInvokeExtractor($gqlHarness, 'gqlMutateSetOutboundRouteAllowlist', array('routeId' => '9', 'listId' => '2', 'remove' => 0, 'store' => 10));
+check($extractorOutboundRawList['ok'] && $extractorOutboundRawList['result']['listId'] === Allowlist::formatGqlAllowlistListRelayGlobalId(2) && strpos($fpHarness->astman->db['/allowlist/autoadd/9'], ',2') !== false, 'gqlMutateSetOutboundRouteAllowlist accepts raw numeric listId');
 $fp->astman->db['/allowlist/sipuser'] = 'legacy label';
 $legacyLocalId = Allowlist::formatGqlAllowlistNodeLocalId(1, 'sipuser');
 check($legacyLocalId === 'sipuser', 'legacy list-1 member keeps bare local node id');

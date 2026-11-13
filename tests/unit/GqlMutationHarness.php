@@ -10,7 +10,7 @@ namespace {
 	class AllowlistUnitGqlTypeContainer
 	{
 		private $types = array();
-		public function create($name, $kind)
+		public function create($name, $kind = null)
 		{
 			$t = new AllowlistUnitGqlTypeStub($name);
 			$this->types[$name] = $t;
@@ -30,6 +30,7 @@ namespace {
 	{
 		private $name;
 		private $object;
+		private $getNodeCallback;
 		public function __construct($name)
 		{
 			$this->name = $name;
@@ -51,6 +52,15 @@ namespace {
 		}
 		public function setGetNodeCallback($cb)
 		{
+			$this->getNodeCallback = $cb;
+		}
+		public function invokeGetNode($id)
+		{
+			if ($this->getNodeCallback === null)
+			{
+				return null;
+			}
+			return ($this->getNodeCallback)($id);
 		}
 		public function addFieldCallback($cb)
 		{
@@ -145,11 +155,29 @@ namespace GraphQLRelay {
 		}
 		public static function connectionFromArray($data, $args)
 		{
-			return array('edges' => array());
+			$edges = array();
+			foreach ($data as $row)
+			{
+				$edges[] = array('node' => $row);
+			}
+			return array('edges' => $edges, 'allowlistQueryListId' => null);
 		}
 		public static function fromGlobalId($id)
 		{
-			return array('type' => 'allowlist', 'id' => $id);
+			$decoded = base64_decode($id, true);
+			if (!is_string($decoded) || $decoded === '')
+			{
+				return array('type' => '', 'id' => '');
+			}
+			$colon = strpos($decoded, ':');
+			if ($colon === false)
+			{
+				return array('type' => '', 'id' => '');
+			}
+			return array(
+				'type' => substr($decoded, 0, $colon),
+				'id' => substr($decoded, $colon + 1),
+			);
 		}
 		public static function globalIdField($type, $cb)
 		{

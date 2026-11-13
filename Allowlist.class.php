@@ -674,7 +674,11 @@ class Allowlist implements BMO
             'number' => $number,
             'description' => $description,
         ));
-        if (!$entry || !$this->listMemberAdd($listId, $entry))
+        if (!$entry)
+        {
+            return false;
+        }
+        if (!$this->listMemberAdd($listId, $entry))
         {
             return false;
         }
@@ -698,19 +702,20 @@ class Allowlist implements BMO
         {
             return false;
         }
+        if ($listId === self::DEFAULT_LIST_ID)
+        {
+            if (!$this->listMemberDel($listId, $number))
+            {
+                return false;
+            }
+            return array('id' => is_scalar($number) ? $number : (isset($number) ? $number : null));
+        }
         $entry = $this->checkEntry(array('number' => $number));
         if ($entry === false)
         {
             return false;
         }
-        if ($listId === self::DEFAULT_LIST_ID)
-        {
-            $deletedId = is_scalar($number) ? (string)$number : '';
-        }
-        else
-        {
-            $deletedId = self::formatGqlAllowlistNodeLocalId($listId, $entry['number']);
-        }
+        $deletedId = self::formatGqlAllowlistNodeLocalId($listId, $entry['number']);
         if ($deletedId === false || $deletedId === '')
         {
             $this->lastError = _('Could not format the removed allowlist entry id.');

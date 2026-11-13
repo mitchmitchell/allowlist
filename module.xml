@@ -11,7 +11,7 @@
 		This module is used to manage a system wide list of allowlisted callers.
 	</description>
 	<changelog>
-		*17.0.1.1*  17.0 release
+		*17.0.1.1*  17.0 release; GraphQL removeAllowlist on a named list returns deletedId = &lt;listId&gt;:&lt;number&gt; (default list unchanged, bare number).
 	</changelog>
 	<hooks>
 		<bulkhandler class="Bulkhandler" namespace="FreePBX\modules">
