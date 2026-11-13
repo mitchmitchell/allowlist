@@ -220,10 +220,14 @@ class Allowlist extends Base {
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
 							$listId = $this->resolveMemberListIdArg(isset($input['id']) ? $input['id'] : null, true);
+							$deletedId = $allowlist->graphqlRemoveAllowlistListDeletedIdPayload($listId);
+							if ($deletedId === false) {
+								throw new UserError(_('Could not format the deleted allowlist id.'));
+							}
 							if (!$allowlist->listDelete($listId)) {
 								throw new UserError($allowlist->getLastError());
 							}
-							return ['id' => (string)$listId];
+							return ['id' => $deletedId];
 						}
 					]),
 					'setInboundRouteAllowlist' => Relay::mutationWithClientMutationId([
@@ -264,7 +268,7 @@ class Allowlist extends Base {
 								throw new UserError($allowlist->getLastError());
 							}
 							return [
-								'listId' => $result['listId'] === null ? null : (string)$result['listId'],
+								'listId' => $result['listId'],
 							];
 						}
 					]),
@@ -281,12 +285,12 @@ class Allowlist extends Base {
 								'description' => _('Allowlist id, or null to turn auto-add off')
 							],
 							'remove' => [
-								'type' => Type::nonNull(Type::int()),
-								'description' => _('Digits to remove from the start of dialed numbers')
+								'type' => Type::int(),
+								'description' => _('Digits to remove from the start of dialed numbers (required when enabling auto-add)')
 							],
 							'store' => [
-								'type' => Type::nonNull(Type::int()),
-								'description' => _('Minimum stored number length for auto-add')
+								'type' => Type::int(),
+								'description' => _('Minimum stored number length for auto-add (required when enabling auto-add)')
 							]
 						],
 						'outputFields' => [
@@ -311,7 +315,7 @@ class Allowlist extends Base {
 								throw new UserError($allowlist->getLastError());
 							}
 							return [
-								'listId' => $result['listId'] === null ? null : (string)$result['listId'],
+								'listId' => $result['listId'],
 							];
 						}
 					])

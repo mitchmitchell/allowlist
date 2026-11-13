@@ -250,16 +250,64 @@ class Allowlist implements BMO
     public static function formatGqlAllowlistNodeLocalId($listId, $number)
     {
         $id = self::parseListIdValue($listId);
-        $n = self::normalizeNumber($number);
-        if ($id === false || $n === false)
+        if ($id === false)
         {
             return false;
         }
+        $n = self::normalizeNumber($number);
         if ($id === self::DEFAULT_LIST_ID)
         {
-            return $n;
+            if ($n !== false)
+            {
+                return $n;
+            }
+            if (self::isLegacyDefaultListMemberKey((string)$number))
+            {
+                return (string)$number;
+            }
+            return false;
+        }
+        if ($n === false)
+        {
+            return false;
         }
         return $id . ':' . $n;
+    }
+
+    public static function isLegacyDefaultListMemberKey($key)
+    {
+        if (!is_string($key) || $key === '')
+        {
+            return false;
+        }
+        if (self::normalizeNumber($key) !== false)
+        {
+            return false;
+        }
+        if (in_array($key, self::RESERVED_KEYS, true))
+        {
+            return false;
+        }
+        foreach (self::RESERVED_PREFIXES as $prefix)
+        {
+            if (strpos($key, $prefix) === 0)
+            {
+                return false;
+            }
+        }
+        return preg_match('/^[^\/\x00-\x1F\x7F]+$/D', $key) === 1;
+    }
+
+    /**
+     * @return string|null|false
+     */
+    public static function formatGraphqlListIdPayload($listId)
+    {
+        if ($listId === null)
+        {
+            return null;
+        }
+        return self::formatGqlAllowlistListRelayGlobalId($listId);
     }
 
     /**
@@ -275,11 +323,15 @@ class Allowlist implements BMO
         if ($colon === false)
         {
             $n = self::normalizeNumber($localId);
-            if ($n === false)
+            if ($n !== false)
             {
-                return false;
+                return array('listId' => self::DEFAULT_LIST_ID, 'number' => $n);
             }
-            return array('listId' => self::DEFAULT_LIST_ID, 'number' => $n);
+            if (self::isLegacyDefaultListMemberKey($localId))
+            {
+                return array('listId' => self::DEFAULT_LIST_ID, 'number' => $localId);
+            }
+            return false;
         }
         $listPart = substr($localId, 0, $colon);
         $numPart = substr($localId, $colon + 1);
@@ -499,13 +551,13 @@ class Allowlist implements BMO
             $this->lastError = _('DID and caller ID may only contain digits, + and dial-pattern characters.');
             return false;
         }
-        if (!$this->inboundRouteExistsInCore($did, $cid))
-        {
-            $this->lastError = _('Inbound route not found.');
-            return false;
-        }
         if ($listIdRaw === null)
         {
+            if (!$this->inboundRouteExistsInCore($did, $cid))
+            {
+                $this->lastError = _('Inbound route not found.');
+                return false;
+            }
             if (!$this->didDelete($did, $cid))
             {
                 return false;
@@ -513,6 +565,11 @@ class Allowlist implements BMO
             $this->signalRouteScreeningDialplanReload();
             $this->logGraphqlInboundRouteAllowlistChange($did, $cid, null);
             return array('listId' => null);
+        }
+        if (!$this->inboundRouteExistsInCore($did, $cid))
+        {
+            $this->lastError = _('Inbound route not found.');
+            return false;
         }
         $listId = $this->resolveGraphqlRouteListIdArg($listIdRaw);
         if ($listId === false || $listId === null)
@@ -529,7 +586,13 @@ class Allowlist implements BMO
         }
         $this->signalRouteScreeningDialplanReload();
         $this->logGraphqlInboundRouteAllowlistChange($did, $cid, $listId);
-        return array('listId' => $listId);
+        $payloadListId = self::formatGraphqlListIdPayload($listId);
+        if ($payloadListId === false)
+        {
+            $this->lastError = _('Could not format the assigned allowlist id.');
+            return false;
+        }
+        return array('listId' => $payloadListId);
     }
 
     /**
@@ -549,11 +612,6 @@ class Allowlist implements BMO
             return false;
         }
         $rid = (int)$routeId;
-        if (!$this->outboundRouteExistsInCore($rid))
-        {
-            $this->lastError = _('Outbound route not found.');
-            return false;
-        }
         if ($listIdRaw === null)
         {
             if (!$this->routeDelete($rid))
@@ -564,6 +622,11 @@ class Allowlist implements BMO
             $this->logGraphqlOutboundRouteAllowlistChange($rid, null);
             return array('listId' => null);
         }
+        if (!$this->outboundRouteExistsInCore($rid))
+        {
+            $this->lastError = _('Outbound route not found.');
+            return false;
+        }
         $listId = $this->resolveGraphqlRouteListIdArg($listIdRaw);
         if ($listId === false || $listId === null)
         {
@@ -573,13 +636,33 @@ class Allowlist implements BMO
             }
             return false;
         }
+        if ($remove === null || $store === null)
+        {
+            $this->lastError = _('remove and store are required when enabling outbound auto-add.');
+            return false;
+        }
         if (!$this->routeAdd($rid, $remove, $store, $listId))
         {
             return false;
         }
         $this->signalRouteScreeningDialplanReload();
         $this->logGraphqlOutboundRouteAllowlistChange($rid, $listId);
-        return array('listId' => $listId);
+        $payloadListId = self::formatGraphqlListIdPayload($listId);
+        if ($payloadListId === false)
+        {
+            $this->lastError = _('Could not format the assigned allowlist id.');
+            return false;
+        }
+        return array('listId' => $payloadListId);
+    }
+
+    /**
+     * @return string|false
+     */
+    public function graphqlRemoveAllowlistListDeletedIdPayload($listId)
+    {
+        $payload = self::formatGraphqlListIdPayload($listId);
+        return $payload === null ? false : $payload;
     }
 
     public function logGraphqlInboundRouteAllowlistChange($did, $cid, $listIdOrNull)
