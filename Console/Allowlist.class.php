@@ -34,11 +34,15 @@ class Allowlist extends Command {
 				new InputOption('route', 'o', InputOption::VALUE_NONE, _('Set whether autoadd to the allowlist is processed for outbound route')),
 				new InputOption('settings', 's', InputOption::VALUE_NONE, _('Enable/Disable settings for allow list processing')),
 				new InputOption('import', 'm', InputOption::VALUE_REQUIRED, _('Import settings from file')),
-				new InputOption('export', 'x', InputOption::VALUE_REQUIRED, _('Export settings to file'))
+				new InputOption('export', 'x', InputOption::VALUE_REQUIRED, _('Export settings to file')),
+				new InputOption('smoke-list-mutation', null, InputOption::VALUE_NONE, _('Smoke-test list mutation lock, list create/delete, and route assignment (creates only zz-smoke-* objects)'))
 			));
 	}
 	protected function execute(InputInterface $input, OutputInterface $output){
 		$allowlist = \FreePBX::create()->Allowlist;
+		if ($input->getOption('smoke-list-mutation')) {
+			return $this->runSmokeListMutation($allowlist, $output);
+		}
 		if($input->getOption('list')) {
 			$table = new Table($output);
 			$table->setHeaders(array(_('ID'),_('Name')));
@@ -108,10 +112,14 @@ class Allowlist extends Command {
 			$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
 			if($routes[($id - 1)]['checked'] == 'Yes'){
 				$output->writeln(sprintf(_('Disabling Outbound Route %s'),$routes[($id - 1)]['name']));
-				$allowlist->routeDelete($id);
+				if ($allowlist->routeDelete($id) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			} else if($routes[($id - 1)]['checked'] == 'No'){
 				$output->writeln(sprintf(_('Enabling Outbound Route %s'),$routes[($id - 1)]['name']));
-				$allowlist->routeAdd($id);
+				if ($allowlist->routeAdd($id) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			}
 			$routes = $this->listOutgoingRoutes($allowlist);
 			$table = new Table($output);
@@ -135,10 +143,14 @@ class Allowlist extends Command {
 			$id = $helper->ask($input, $output, $question); // $id is one based so that zero appears as invalid answer (0 = carriage return)
 			if($routes[($id - 1)]['checked'] == 'Yes'){
 				$output->writeln(sprintf(_('Disabling DID %s'),$routes[($id - 1)]['description']));
-				$allowlist->didDelete($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']);
+				if ($allowlist->didDelete($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			} else if($routes[($id - 1)]['checked'] == 'No'){
 				$output->writeln(sprintf(_('Enabling DID %s'),$routes[($id - 1)]['description']));
-				$allowlist->didAdd($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']);
+				if ($allowlist->didAdd($routes[($id - 1)]['extension'], $routes[($id - 1)]['cidnum']) === false) {
+					$output->writeln('<error>' . $allowlist->getLastError() . '</error>');
+				}
 			}
 			$routes = $this->listIncomingRoutes($allowlist);
 			$table = new Table($output);
@@ -216,7 +228,7 @@ class Allowlist extends Command {
 			}
 		}
 		
-		if(!$input->getOption('add') && !$input->getOption('delete') && !$input->getOption('list') && !$input->getOption('destination') && !$input->getOption('settings') && !$input->getOption('route')  && !$input->getOption('did') && !$input->getOption('import')  && !$input->getOption('export')) {
+		if(!$input->getOption('add') && !$input->getOption('delete') && !$input->getOption('list') && !$input->getOption('destination') && !$input->getOption('settings') && !$input->getOption('route')  && !$input->getOption('did') && !$input->getOption('import')  && !$input->getOption('export') && !$input->getOption('smoke-list-mutation')) {
 			$this->outputHelp($input,$output);
 			exit(4);
 		}
@@ -353,6 +365,83 @@ class Allowlist extends Command {
 			return false;
 		}
 		return true;
+	}
+
+	private function runSmokeListMutation($allowlist, OutputInterface $output) {
+		$passed = true;
+		$createdListId = false;
+		$listName = 'zz-smoke-' . getmypid();
+		$smokeDid = $allowlist->defaultSmokeListMutationDid();
+		$didAssigned = false;
+		$step = function ($label, $ok) use ($output, &$passed) {
+			$output->writeln($label . ': ' . ($ok ? 'PASS' : 'FAIL'));
+			if (!$ok) {
+				$passed = false;
+			}
+		};
+		try {
+			if ($allowlist->didIsSet($smokeDid, '')) {
+				$output->writeln(_('Smoke test aborted: an allowlist did/ mapping already exists for the smoke DID; refusing to overwrite it.'));
+				$step('smoke DID available', false);
+				return 1;
+			}
+			$createdListId = $allowlist->listCreate($listName);
+			$step('create throwaway list', $createdListId !== false);
+			if ($createdListId === false) {
+				return 1;
+			}
+			$didAssigned = ($allowlist->didAddRouteIfUnassigned($smokeDid, '', $createdListId) === true);
+			$step('assign throwaway inbound route', $didAssigned);
+			$refused = ($allowlist->listDelete($createdListId) === false);
+			$err = $allowlist->getLastError();
+			$step('listDelete refuses while route assigned', $refused && is_string($err) && $err !== '');
+			if ($didAssigned) {
+				$unassigned = ($allowlist->didDelete($smokeDid, '') !== false);
+				$step('unassign throwaway inbound route', $unassigned);
+				if ($unassigned) {
+					$didAssigned = false;
+				}
+			}
+			$deleted = ($allowlist->listDelete($createdListId) === true);
+			$step('delete throwaway list', $deleted);
+			if ($deleted) {
+				$createdListId = false;
+			}
+			$path = $allowlist->getListMutationLockFilePath();
+			$lockOk = is_string($path) && $path !== '' && is_file($path);
+			$step('lock file path present', $lockOk);
+			if ($lockOk) {
+				$mode = sprintf('%04o', fileperms($path) & 07777);
+				$owner = fileowner($path);
+				$group = filegroup($path);
+				$ownerLabel = (string)$owner;
+				$groupLabel = (string)$group;
+				if (function_exists('posix_getpwuid')) {
+					$pw = posix_getpwuid($owner);
+					if (is_array($pw) && isset($pw['name'])) {
+						$ownerLabel = $pw['name'];
+					}
+				}
+				if (function_exists('posix_getgrgid')) {
+					$gr = posix_getgrgid($group);
+					if (is_array($gr) && isset($gr['name'])) {
+						$groupLabel = $gr['name'];
+					}
+				}
+				$output->writeln(sprintf('lock file: %s owner=%s group=%s mode=%s', $path, $ownerLabel, $groupLabel, $mode));
+				$fp = fopen($path, 'r');
+				$step('lock file open after smoke', $fp !== false);
+				if (is_resource($fp)) {
+					fclose($fp);
+				}
+			}
+		} finally {
+			$leftover = $allowlist->cleanupSmokeListMutationArtifacts($smokeDid, $createdListId, $didAssigned);
+			foreach ($allowlist->smokeListMutationCleanupFailureMessages($leftover) as $line) {
+				$output->writeln('<error>' . $line . '</error>');
+			}
+		}
+		return $passed ? 0 : 1;
 	}
 
 	private function getDestinations() {

@@ -34,8 +34,17 @@ class Allowlist implements BMO
     const DEFAULT_LIST_ID = 1;
     const DEFAULT_LIST_NAME = 'Default';
     const AUTOADD_VALUE_PATTERN = '/^1,[0-9]{1,6},[0-9]{1,6}(,[0-9]{1,4})?$/D';
+    const LIST_MUTATION_LOCK_WAIT_SEC = 15;
+    const LIST_MUTATION_LOCK_POLL_USEC = 50000;
 
     private $lastError = '';
+    private $listMutationLockHandle = null;
+    private $listMutationLockDepth = 0;
+    private $listMutationLockFailureReason = '';
+
+    const LIST_MUTATION_LOCK_FAILURE_BUSY = 'lock_busy';
+    const LIST_MUTATION_LOCK_FAILURE_OPEN = 'lock_open_failed';
+    const LIST_MUTATION_LOCK_FAILURE_SPOOL = 'lock_spool_unavailable';
 
     /**
      * Validate an allowlist number.
@@ -224,6 +233,307 @@ class Allowlist implements BMO
     public function getLastError()
     {
         return $this->lastError;
+    }
+
+    public function getListMutationLockFilePath()
+    {
+        return $this->listMutationLockPath();
+    }
+
+    protected function listMutationLockSpoolDir()
+    {
+        if (!isset($this->FreePBX->Config))
+        {
+            return false;
+        }
+        $spool = $this->FreePBX->Config->get('ASTSPOOLDIR');
+        if (!is_string($spool) || $spool === '')
+        {
+            return false;
+        }
+        $dir = rtrim($spool, '/');
+        if (!is_dir($dir) || !is_writable($dir))
+        {
+            return false;
+        }
+        return $dir;
+    }
+
+    protected function listMutationLockPath()
+    {
+        $dir = $this->listMutationLockSpoolDir();
+        if ($dir === false)
+        {
+            return '';
+        }
+        return $dir . '/allowlist-list-mutation.lock';
+    }
+
+    protected function listMutationLockWaitSec()
+    {
+        return self::LIST_MUTATION_LOCK_WAIT_SEC;
+    }
+
+    protected function onListMutationLockWaiting()
+    {
+    }
+
+    protected function refreshListMutationState()
+    {
+    }
+
+    protected function afterListCreateWrite($listId)
+    {
+    }
+
+    protected function afterListDeleteWrite($listId)
+    {
+    }
+
+    protected function beforeListMutationLockAcquire()
+    {
+    }
+
+    private function provisionListMutationLockFile($path)
+    {
+        if ($path === '' || file_exists($path))
+        {
+            return;
+        }
+        $created = fopen($path, 'w');
+        if ($created === false)
+        {
+            return;
+        }
+        fclose($created);
+        chmod($path, 0660);
+        $user = 'asterisk';
+        $group = 'asterisk';
+        if (isset($this->FreePBX->Config))
+        {
+            $cfgUser = $this->FreePBX->Config->get('AMPASTERISKUSER');
+            $cfgGroup = $this->FreePBX->Config->get('AMPASTERISKGROUP');
+            if (is_string($cfgUser) && $cfgUser !== '')
+            {
+                $user = $cfgUser;
+            }
+            if (is_string($cfgGroup) && $cfgGroup !== '')
+            {
+                $group = $cfgGroup;
+            }
+        }
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0 && function_exists('posix_getpwnam'))
+        {
+            $pw = posix_getpwnam($user);
+            if (is_array($pw))
+            {
+                if (chown($path, $user) === false)
+                {
+                    $this->auditLog('Allowlist: list-mutation lock chown failed for ' . $user);
+                }
+            }
+            else
+            {
+                $this->auditLog('Allowlist: list-mutation lock user lookup failed for ' . $user);
+            }
+        }
+        if (function_exists('posix_getgrnam'))
+        {
+            $gr = posix_getgrnam($group);
+            if (is_array($gr))
+            {
+                if (chgrp($path, $group) === false)
+                {
+                    $this->auditLog('Allowlist: list-mutation lock chgrp failed for ' . $group);
+                }
+            }
+            else
+            {
+                $this->auditLog('Allowlist: list-mutation lock group lookup failed for ' . $group);
+            }
+        }
+    }
+
+    /**
+     * @return bool True when the key is gone or was already absent; false on delete failure
+     */
+    private function deleteAllowlistAstKey($family, $key)
+    {
+        if ($this->astman->database_del($family, $key))
+        {
+            return true;
+        }
+        $left = $this->astman->database_get($family, $key);
+        if ($left === false || $left === '')
+        {
+            if (!$this->astman->connected())
+            {
+                $this->lastError = _('Cannot connect to Asterisk Manager, is Asterisk running?');
+                return false;
+            }
+            return true;
+        }
+        $this->lastError = _('Could not delete the setting: the Asterisk database rejected the delete.');
+        return false;
+    }
+
+    public function defaultSmokeListMutationDid()
+    {
+        return '8999' . sprintf('%04d', getmypid() % 10000);
+    }
+
+    public function cleanupSmokeListMutationArtifacts($smokeDid, &$createdListId, &$didAssigned)
+    {
+        $leftover = array(
+            'did' => false,
+            'listId' => false,
+            'listName' => '',
+        );
+        if ($didAssigned)
+        {
+            if ($this->didDelete($smokeDid, ''))
+            {
+                $didAssigned = false;
+            }
+            else
+            {
+                $leftover['did'] = $smokeDid;
+            }
+        }
+        if ($createdListId !== false && $this->listExists($createdListId))
+        {
+            $listName = $this->astman->database_get('allowlist-lists', (string)$createdListId);
+            if (!is_string($listName))
+            {
+                $listName = '';
+            }
+            if ($this->listDelete($createdListId))
+            {
+                $createdListId = false;
+            }
+            else
+            {
+                $leftover['listId'] = $createdListId;
+                $leftover['listName'] = $listName;
+            }
+        }
+        return $leftover;
+    }
+
+    public function smokeListMutationCleanupFailureMessages(array $leftover)
+    {
+        $out = array();
+        if ($leftover['did'] !== false && $leftover['did'] !== '')
+        {
+            $out[] = sprintf(_('Smoke cleanup failed: remove the allowlist inbound-route mapping for DID %s manually.'), $leftover['did']);
+        }
+        if ($leftover['listId'] !== false)
+        {
+            $name = $leftover['listName'] !== '' ? $leftover['listName'] : ('id ' . $leftover['listId']);
+            $out[] = sprintf(_('Smoke cleanup failed: remove the throwaway allowlist %s manually.'), $name);
+        }
+        return $out;
+    }
+
+    private function acquireListMutationLock()
+    {
+        if ($this->listMutationLockHandle !== null)
+        {
+            $this->listMutationLockDepth++;
+            return true;
+        }
+        $this->listMutationLockFailureReason = '';
+        $path = $this->listMutationLockPath();
+        if ($path === '')
+        {
+            $this->listMutationLockFailureReason = self::LIST_MUTATION_LOCK_FAILURE_SPOOL;
+            $this->lastError = _('Allowlist list-mutation lock is not available: the Asterisk spool directory is missing or not writable.');
+            return false;
+        }
+        $this->provisionListMutationLockFile($path);
+        $fp = fopen($path, 'r');
+        if ($fp === false)
+        {
+            $this->listMutationLockFailureReason = self::LIST_MUTATION_LOCK_FAILURE_OPEN;
+            $this->lastError = sprintf(_('Could not open the allowlist list-mutation lock file (%s); check permissions.'), $path);
+            return false;
+        }
+        $wait = $this->listMutationLockWaitSec();
+        $deadline = microtime(true) + $wait;
+        $signaledWaiting = false;
+        while (true)
+        {
+            if (flock($fp, LOCK_EX | LOCK_NB))
+            {
+                $this->listMutationLockHandle = $fp;
+                $this->listMutationLockDepth = 1;
+                return true;
+            }
+            if (!$signaledWaiting)
+            {
+                $this->onListMutationLockWaiting();
+                $signaledWaiting = true;
+            }
+            if (microtime(true) >= $deadline)
+            {
+                fclose($fp);
+                $this->listMutationLockFailureReason = self::LIST_MUTATION_LOCK_FAILURE_BUSY;
+                $this->lastError = _('Another allowlist operation is in progress; try again shortly.');
+                return false;
+            }
+            usleep(self::LIST_MUTATION_LOCK_POLL_USEC);
+        }
+    }
+
+    private function releaseListMutationLock()
+    {
+        if ($this->listMutationLockHandle === null)
+        {
+            return;
+        }
+        $this->listMutationLockDepth--;
+        if ($this->listMutationLockDepth > 0)
+        {
+            return;
+        }
+        $fp = $this->listMutationLockHandle;
+        $this->listMutationLockHandle = null;
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
+
+    /**
+     * @return mixed Callback return value, or false when the lock could not be acquired
+     */
+    private function withListMutationLock(callable $fn)
+    {
+        $this->beforeListMutationLockAcquire();
+        if (!$this->acquireListMutationLock())
+        {
+            if ($this->lastError === '')
+            {
+                $this->lastError = _('Another allowlist operation is in progress; try again shortly.');
+            }
+            return false;
+        }
+        try
+        {
+            $this->refreshListMutationState();
+            return $fn();
+        }
+        finally
+        {
+            $this->releaseListMutationLock();
+        }
+    }
+
+    public function provisionListMutationLockForInstall()
+    {
+        $path = $this->listMutationLockPath();
+        if ($path !== '')
+        {
+            $this->provisionListMutationLockFile($path);
+        }
     }
 
     /**
@@ -495,6 +805,7 @@ class Allowlist implements BMO
         $fcc->update();
         unset($fcc);
 
+        $this->provisionListMutationLockForInstall();
         if ($this->astman->connected())
         {
             $this->upgradeAllowlistDataModel();
@@ -523,6 +834,11 @@ class Allowlist implements BMO
     }
     public function uninstall()
     {
+        $path = $this->listMutationLockPath();
+        if ($path !== '' && is_file($path))
+        {
+            unlink($path);
+        }
     }
 
     public function doConfigPageInit($page)
@@ -1655,24 +1971,27 @@ class Allowlist implements BMO
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
-        $lists = $this->listGetAll();
-        if (count($lists) >= self::LIST_MAX)
-        {
-            $this->lastError = sprintf(_('At most %d allowlists are supported.'), self::LIST_MAX);
-            return false;
-        }
-        $next = $this->nextAvailableListId($lists);
-        if ($next === false)
-        {
-            $this->lastError = _('No allowlist id is available.');
-            return false;
-        }
-        if (!$this->astman->database_put('allowlist-lists', (string)$next, $name))
-        {
-            $this->lastError = _('Could not save the allowlist: the Asterisk database rejected the write.');
-            return false;
-        }
-        return $next;
+        return $this->withListMutationLock(function () use ($name) {
+            $lists = $this->listGetAll();
+            if (count($lists) >= self::LIST_MAX)
+            {
+                $this->lastError = sprintf(_('At most %d allowlists are supported.'), self::LIST_MAX);
+                return false;
+            }
+            $next = $this->nextAvailableListId($lists);
+            if ($next === false)
+            {
+                $this->lastError = _('No allowlist id is available.');
+                return false;
+            }
+            if (!$this->astman->database_put('allowlist-lists', (string)$next, $name))
+            {
+                $this->lastError = _('Could not save the allowlist: the Asterisk database rejected the write.');
+                return false;
+            }
+            $this->afterListCreateWrite($next);
+            return $next;
+        });
     }
 
     public function listRename($listId, $name)
@@ -1689,17 +2008,19 @@ class Allowlist implements BMO
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
-        if (!$this->listExists($id))
-        {
-            $this->lastError = _('Unknown allowlist.');
-            return false;
-        }
-        if (!$this->astman->database_put('allowlist-lists', (string)$id, $name))
-        {
-            $this->lastError = _('Could not save the allowlist name: the Asterisk database rejected the write.');
-            return false;
-        }
-        return true;
+        return $this->withListMutationLock(function () use ($id, $name) {
+            if (!$this->listExists($id))
+            {
+                $this->lastError = _('Unknown allowlist.');
+                return false;
+            }
+            if (!$this->astman->database_put('allowlist-lists', (string)$id, $name))
+            {
+                $this->lastError = _('Could not save the allowlist name: the Asterisk database rejected the write.');
+                return false;
+            }
+            return true;
+        });
     }
 
     /**
@@ -1757,54 +2078,58 @@ class Allowlist implements BMO
             $this->lastError = _('The default allowlist cannot be deleted.');
             return false;
         }
-        if (!$this->listExists($id))
-        {
-            $this->lastError = _('Unknown allowlist.');
-            return false;
-        }
-        $uses = $this->listRoutesUsingList($id);
-        if (!empty($uses['inbound']) || !empty($uses['outbound']))
-        {
-            $parts = array();
-            if (!empty($uses['inbound']))
-            {
-                $parts[] = sprintf(_('inbound %s'), implode(', ', $uses['inbound']));
-            }
-            if (!empty($uses['outbound']))
-            {
-                $parts[] = sprintf(_('outbound route id %s'), implode(', ', $uses['outbound']));
-            }
-            $this->lastError = sprintf(_('This allowlist is still assigned (%s). Remove those assignments first.'), implode('; ', $parts));
-            return false;
-        }
         if (!$this->astman->connected())
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
-        foreach (array_keys($this->astman->database_show('allowlist-list')) as $k)
-        {
-            if (strpos($k, '/allowlist-list/' . $id . '/') === 0)
+        return $this->withListMutationLock(function () use ($id) {
+            if (!$this->listExists($id))
             {
-                $member = substr($k, strlen('/allowlist-list/' . $id . '/'));
-                if (!$this->astman->database_del('allowlist-list', $id . '/' . $member))
+                $this->lastError = _('Unknown allowlist.');
+                return false;
+            }
+            $uses = $this->listRoutesUsingList($id);
+            if (!empty($uses['inbound']) || !empty($uses['outbound']))
+            {
+                $parts = array();
+                if (!empty($uses['inbound']))
                 {
-                    $this->lastError = _('Could not delete allowlist members: the Asterisk database rejected a delete.');
-                    return false;
+                    $parts[] = sprintf(_('inbound %s'), implode(', ', $uses['inbound']));
+                }
+                if (!empty($uses['outbound']))
+                {
+                    $parts[] = sprintf(_('outbound route id %s'), implode(', ', $uses['outbound']));
+                }
+                $this->lastError = sprintf(_('This allowlist is still assigned (%s). Remove those assignments first.'), implode('; ', $parts));
+                return false;
+            }
+            foreach (array_keys($this->astman->database_show('allowlist-list')) as $k)
+            {
+                if (strpos($k, '/allowlist-list/' . $id . '/') === 0)
+                {
+                    $member = substr($k, strlen('/allowlist-list/' . $id . '/'));
+                    if (!$this->astman->database_del('allowlist-list', $id . '/' . $member))
+                    {
+                        $this->lastError = _('Could not delete allowlist members: the Asterisk database rejected a delete.');
+                        return false;
+                    }
                 }
             }
-        }
-        if (!$this->astman->database_del('allowlist-lists', (string)$id))
-        {
-            $this->lastError = _('Could not delete the allowlist: the Asterisk database rejected the delete.');
-            return false;
-        }
-        return true;
+            if (!$this->astman->database_del('allowlist-lists', (string)$id))
+            {
+                $this->lastError = _('Could not delete the allowlist: the Asterisk database rejected the delete.');
+                return false;
+            }
+            $this->afterListDeleteWrite($id);
+            return true;
+        });
     }
 
     public function listMemberAdd($listId, $post)
     {
+        $this->lastError = '';
         $id = self::parseListIdValue($listId);
-        if ($id === false || !$this->listExists($id))
+        if ($id === false)
         {
             $this->lastError = _('Unknown allowlist.');
             return false;
@@ -1823,19 +2148,28 @@ class Allowlist implements BMO
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
         $description = $entry['description'] === '' ? '1' : $entry['description'];
-        $key = $id . '/' . $entry['number'];
-        if (!$this->astman->database_put('allowlist-list', $key, htmlentities($description, ENT_COMPAT | ENT_HTML401, 'UTF-8')))
-        {
-            $this->lastError = _('Could not save the number: the Asterisk database rejected the write.');
-            return false;
-        }
-        return true;
+        $stored = htmlentities($description, ENT_COMPAT | ENT_HTML401, 'UTF-8');
+        return $this->withListMutationLock(function () use ($id, $entry, $stored) {
+            if (!$this->listExists($id))
+            {
+                $this->lastError = _('Unknown allowlist.');
+                return false;
+            }
+            $key = $id . '/' . $entry['number'];
+            if (!$this->astman->database_put('allowlist-list', $key, $stored))
+            {
+                $this->lastError = _('Could not save the number: the Asterisk database rejected the write.');
+                return false;
+            }
+            return true;
+        });
     }
 
     public function listMemberDel($listId, $number)
     {
+        $this->lastError = '';
         $id = self::parseListIdValue($listId);
-        if ($id === false || !$this->listExists($id))
+        if ($id === false)
         {
             $this->lastError = _('Unknown allowlist.');
             return false;
@@ -1854,12 +2188,19 @@ class Allowlist implements BMO
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
-        if (!$this->astman->database_del('allowlist-list', $id . '/' . $n))
-        {
-            $this->lastError = _('Could not delete the number: the Asterisk database rejected the delete.');
-            return false;
-        }
-        return true;
+        return $this->withListMutationLock(function () use ($id, $n) {
+            if (!$this->listExists($id))
+            {
+                $this->lastError = _('Unknown allowlist.');
+                return false;
+            }
+            if (!$this->astman->database_del('allowlist-list', $id . '/' . $n))
+            {
+                $this->lastError = _('Could not delete the number: the Asterisk database rejected the delete.');
+                return false;
+            }
+            return true;
+        });
     }
 
     /**
@@ -1922,6 +2263,55 @@ class Allowlist implements BMO
         return $ok($did) && $ok($cid);
     }
 
+    public function didAddRouteIfUnassigned($did, $cid, $listId)
+    {
+        $this->lastError = '';
+        if (!self::validDidCid($did, $cid))
+        {
+            $this->lastError = _('DID and caller ID may only contain digits, + and dial-pattern characters.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid DID/CID');
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $stored = self::formatDidMappingValue($listId);
+        $parsedListId = self::parseListIdValue($listId);
+        if ($stored === false || $parsedListId === false)
+        {
+            $this->lastError = _('Invalid allowlist id for this inbound route.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+            return false;
+        }
+        if (!$this->listExists($parsedListId))
+        {
+            $this->lastError = _('Invalid allowlist id for this inbound route.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+            return false;
+        }
+        $exten = $did . ($cid == "" ? "" : '/' . $cid);
+        return $this->withListMutationLock(function () use ($did, $cid, $exten, $stored, $parsedListId) {
+            if ($this->didIsSet($did, $cid))
+            {
+                $this->lastError = _('This inbound route already has an allowlist screening setting.');
+                return false;
+            }
+            if (!$this->listExists($parsedListId))
+            {
+                $this->lastError = _('Invalid allowlist id for this inbound route.');
+                $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+                return false;
+            }
+            if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
+            {
+                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+                return false;
+            }
+            return true;
+        });
+    }
+
     public function didAdd($did, $cid, $listId = self::DEFAULT_LIST_ID)
     {
         $this->lastError = '';
@@ -1936,19 +2326,34 @@ class Allowlist implements BMO
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
         $stored = self::formatDidMappingValue($listId);
-        if ($stored === false || !$this->listExists($stored))
+        $parsedListId = self::parseListIdValue($listId);
+        if ($stored === false || $parsedListId === false)
+        {
+            $this->lastError = _('Invalid allowlist id for this inbound route.');
+            $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+            return false;
+        }
+        if (!$this->listExists($parsedListId))
         {
             $this->lastError = _('Invalid allowlist id for this inbound route.');
             $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
             return false;
         }
         $exten = $did . ($cid == "" ? "" : '/' . $cid);
-        if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
-        {
-            $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
-            return false;
-        }
-        return true;
+        return $this->withListMutationLock(function () use ($exten, $stored, $parsedListId) {
+            if (!$this->listExists($parsedListId))
+            {
+                $this->lastError = _('Invalid allowlist id for this inbound route.');
+                $this->auditLog('Allowlist: rejected an inbound-route allowlist setting with an invalid list id');
+                return false;
+            }
+            if (!$this->astman->database_put('allowlist', 'did/' . $exten, $stored))
+            {
+                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+                return false;
+            }
+            return true;
+        });
     }
 
     public function didGetListId($did, $cid)
@@ -1998,16 +2403,15 @@ class Allowlist implements BMO
 
     public function didDelete($did, $cid)
     {
-        if ($this->astman->connected())
-        {
-            // Remove did/cid pair
-            $exten = $did . ($cid == "" ? "" : '/' . $cid);
-            $this->astman->database_del('allowlist', 'did/' . $exten);
-        }
-        else
+        $this->lastError = '';
+        if (!$this->astman->connected())
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
+        $exten = $did . ($cid == "" ? "" : '/' . $cid);
+        return $this->withListMutationLock(function () use ($exten) {
+            return $this->deleteAllowlistAstKey('allowlist', 'did/' . $exten);
+        });
     }
 
     public function didIsSet($did, $cid)
@@ -2047,30 +2451,45 @@ class Allowlist implements BMO
         }
         $stored = self::formatAutoaddMappingValue((int)$ld, (int)$sd, $listId);
         $parsedListId = self::parseListIdValue($listId);
-        if ($stored === false || $parsedListId === false || !$this->listExists($parsedListId))
+        if ($stored === false || $parsedListId === false)
         {
             $this->lastError = _('Invalid allowlist id for this outbound route.');
             $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
             return false;
         }
-        if (!$this->astman->database_put('allowlist', 'autoadd/' . (int)$id, $stored))
+        if (!$this->listExists($parsedListId))
         {
-            $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+            $this->lastError = _('Invalid allowlist id for this outbound route.');
+            $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
             return false;
         }
-        return true;
+        $routeId = (int)$id;
+        return $this->withListMutationLock(function () use ($routeId, $stored, $parsedListId) {
+            if (!$this->listExists($parsedListId))
+            {
+                $this->lastError = _('Invalid allowlist id for this outbound route.');
+                $this->auditLog('Allowlist: rejected an outbound-route auto-add setting with an invalid list id');
+                return false;
+            }
+            if (!$this->astman->database_put('allowlist', 'autoadd/' . $routeId, $stored))
+            {
+                $this->lastError = _('Could not save the setting: the Asterisk database rejected the write.');
+                return false;
+            }
+            return true;
+        });
     }
 
     public function routeDelete($id)
     {
-        if ($this->astman->connected())
-        {
-            $this->astman->database_del('allowlist', 'autoadd/' . $id);
-        }
-        else
+        $this->lastError = '';
+        if (!$this->astman->connected())
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
+        return $this->withListMutationLock(function () use ($id) {
+            return $this->deleteAllowlistAstKey('allowlist', 'autoadd/' . (string)$id);
+        });
     }
 
     public function routeIsSet($id)
