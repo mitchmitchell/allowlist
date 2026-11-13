@@ -1287,6 +1287,10 @@ check($al->applyGraphqlRemoveAllowlistMember('2', 'not-a-phone;') === false && $
 $addedList2 = $al->applyGraphqlAddAllowlistMember('2', '2025554555', 'list2-gql');
 check($addedList2 !== false && (int)$addedList2['listId'] === 2 && $al->findListMember(2, '2025554555') !== null && $al->findListMember(1, '2025554555') === null, 'applyGraphqlAddAllowlistMember list 2 does not add to list 1');
 check($al->applyGraphqlRemoveAllowlistMember(null, '2025559999888') === false, 'applyGraphqlRemoveAllowlistMember missing member does not report success');
+check($al->applyGraphqlRemoveAllowlistMember('2', '2025557777001') === false && $al->findListMember(2, '2025554444') !== null, 'applyGraphqlRemoveAllowlistMember list 2 rejects missing member');
+$fp->astman->db['/allowlist/2025550100'] = 'ws-pad-target';
+$spacePadInput = ' 2025550100';
+check($al->applyGraphqlRemoveAllowlistMember(null, $spacePadInput) === false && isset($fp->astman->db['/allowlist/2025550100']), 'applyGraphqlRemoveAllowlistMember list 1 rejects whitespace-padded input');
 $removedList2 = $al->applyGraphqlRemoveAllowlistMember('2', '2025554555');
 check($removedList2 !== false && $removedList2['id'] === '2:2025554555' && $al->findListMember(2, '2025554555') === null && $al->findListMember(2, '2025554444') !== null, 'applyGraphqlRemoveAllowlistMember list 2 returns composite deletedId');
 check($al->applyGraphqlAddAllowlistMember('2', 'bad', 'x') === false && $al->findListMember(2, 'bad') === null, 'applyGraphqlAddAllowlistMember failure does not leave a member');
@@ -1485,8 +1489,13 @@ $badNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist
 check($badNode === null, 'allowlist query resolve rejects unparseable node id');
 $goodNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:2:2025558600')));
 check($goodNode !== null && (int)$goodNode['listId'] === 2, 'allowlist query resolve returns named-list member');
+$alHarness->listMemberDel(2, '2025558600');
+$goneNodeQuery = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:2:2025558600')));
+check($goneNodeQuery === null, 'allowlist query resolve null after member removed');
+check($gqlHarness->invokeAllowlistGetNode('2:2025558600') === null, 'allowlist getNode null after member removed');
 check($gqlHarness->invokeAllowlistGetNode('../x') === null, 'allowlist getNode rejects unparseable local id');
-check($gqlHarness->invokeAllowlistGetNode('2:2025558600') !== null, 'allowlist getNode resolves named-list member');
+$closureRemoveMissingL2 = allowlistUnitGqlRunMutation($gqlHarness, 'removeAllowlist', array('number' => '2025557777888', 'listId' => '2'));
+check(!$closureRemoveMissingL2['ok'] && $closureRemoveMissingL2['error'] !== '', 'GQL removeAllowlist list 2 missing member returns UserError');
 $extractorOutboundRawList = allowlistUnitGqlInvokeExtractor($gqlHarness, 'gqlMutateSetOutboundRouteAllowlist', array('routeId' => '9', 'listId' => '2', 'remove' => 0, 'store' => 10));
 check($extractorOutboundRawList['ok'] && $extractorOutboundRawList['result']['listId'] === Allowlist::formatGqlAllowlistListRelayGlobalId(2) && strpos($fpHarness->astman->db['/allowlist/autoadd/9'], ',2') !== false, 'gqlMutateSetOutboundRouteAllowlist accepts raw numeric listId');
 $fp->astman->db['/allowlist/sipuser'] = 'legacy label';

@@ -708,7 +708,7 @@ class Allowlist implements BMO
             {
                 return false;
             }
-            return array('id' => is_scalar($number) ? $number : (isset($number) ? $number : null));
+            return array('id' => $number);
         }
         $entry = $this->checkEntry(array('number' => $number));
         if ($entry === false)
