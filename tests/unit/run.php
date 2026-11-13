@@ -303,6 +303,7 @@ check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlListIdArg', 'DEFA
 check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlListIdArg', '$required'), 'resolveGraphqlListIdArg pins required allowlist id branch');
 check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlRouteListIdArg', 'listExists($id)'), 'resolveGraphqlRouteListIdArg enforces listExists');
 check(strpos($gql, "array_key_exists('listId', \$input)") !== false, 'route setters require listId key in GraphQL input');
+check(allowlistUnitFunctionBodyContains($gql, 'resolveMemberListIdArg', 'throw new UserError'), 'resolveMemberListIdArg throws UserError on unknown list');
 check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlInboundRouteAllowlist', 'signalRouteScreeningDialplanReload'), 'inbound GraphQL route assign signals dialplan reload');
 check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlOutboundRouteAllowlist', 'signalRouteScreeningDialplanReload'), 'outbound GraphQL route assign signals dialplan reload');
 foreach (array('addAllowlist', 'removeAllowlist', 'addAllowlistList', 'renameAllowlistList', 'removeAllowlistList', 'setInboundRouteAllowlist', 'setOutboundRouteAllowlist') as $gqlMutName) {
@@ -1479,12 +1480,27 @@ $extractorInboundOmit = allowlistUnitGqlInvokeExtractor($gqlHarness, 'gqlMutateS
 check(!$extractorInboundOmit['ok'] && isset($fpHarness->astman->db['/allowlist/did/5550888']), 'gqlMutateSetInboundRouteAllowlist omitted listId leaves screening unchanged');
 $alHarness->listMemberAdd(2, array('number' => '2025558600', 'description' => 'q-filter-a'));
 $alHarness->listMemberAdd(1, array('number' => '2025558601', 'description' => 'q-filter-b'));
+$fpHarness->astman->db['/allowlist/sipuser'] = 'legacy node';
 $gqlQueries = $gqlHarness->readQueryResolvers();
 $connList2 = $gqlQueries['allAllowlists'](null, array('listId' => '2', 'first' => 50));
 $list2Numbers = array_map(function ($edge) {
 	return $edge['node']['number'];
 }, $connList2['edges']);
 check(!in_array('2025558601', $list2Numbers, true) && in_array('2025558600', $list2Numbers, true), 'allAllowlists listId filters members to list 2');
+$unknownListQuery = allowlistUnitGqlRunQuery($gqlHarness, 'allAllowlists', array('listId' => '99'));
+check(!$unknownListQuery['ok'] && $unknownListQuery['error'] === _('Unknown allowlist.'), 'allAllowlists unknown listId throws exact Unknown allowlist error');
+$countList1 = count($alHarness->listMemberGetAll(1));
+$countList2 = count($alHarness->listMemberGetAll(2));
+check($countList2 !== $countList1, 'harness list 1 and list 2 have distinct member counts');
+check((int)$connList2['allowlistQueryListId'] === 2, 'allAllowlists sets allowlistQueryListId on connection');
+check($gqlHarness->invokeAllAllowlistsTotalCount(array('listId' => '2')) === $countList2, 'allAllowlists totalCount matches list 2 member count');
+$list2NodeRow = $gqlHarness->invokeAllowlistGetNode('2:2025558600');
+check($list2NodeRow !== null && (int)$list2NodeRow['listId'] === 2 && $list2NodeRow['number'] === '2025558600', 'allowlist getNode returns list-2 member with listId and number');
+$list1NodeRow = $gqlHarness->invokeAllowlistGetNode('sipuser');
+check($list1NodeRow !== null && (int)$list1NodeRow['listId'] === 1 && $list1NodeRow['number'] === 'sipuser', 'allowlist getNode returns list-1 bare-id member');
+$presentListNode = $gqlHarness->invokeAllowlistListGetNode('2');
+check($presentListNode !== null && (int)$presentListNode['id'] === 2, 'allowlistList getNode returns summary for existing list');
+check($gqlHarness->invokeAllowlistListGetNode('99') === null, 'allowlistList getNode null for nonexistent list');
 $badNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:../x')));
 check($badNode === null, 'allowlist query resolve rejects unparseable node id');
 $goodNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:2:2025558600')));

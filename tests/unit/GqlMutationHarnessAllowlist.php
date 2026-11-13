@@ -50,5 +50,19 @@ namespace FreePBX\modules\Allowlist\Api\Gql {
 			$this->initializeTypes();
 			return $this->typeContainer->get('allowlist')->invokeGetNode($localId);
 		}
+
+		public function invokeAllowlistListGetNode($listIdLocal)
+		{
+			$this->initializeTypes();
+			return $this->typeContainer->get('allowlistList')->invokeGetNode($listIdLocal);
+		}
+
+		public function invokeAllAllowlistsTotalCount(array $args)
+		{
+			$resolvers = $this->readQueryResolvers();
+			$conn = $resolvers['allAllowlists'](null, $args);
+			$this->initializeTypes();
+			return $this->typeContainer->get('allowlist')->resolveConnectionField('totalCount', $conn);
+		}
 	}
 }

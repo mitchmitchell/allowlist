@@ -31,6 +31,7 @@ namespace {
 		private $name;
 		private $object;
 		private $getNodeCallback;
+		private $connectionFieldsCallback;
 		public function __construct($name)
 		{
 			$this->name = $name;
@@ -70,6 +71,20 @@ namespace {
 		}
 		public function setConnectionFields($cb)
 		{
+			$this->connectionFieldsCallback = $cb;
+		}
+		public function resolveConnectionField($field, array $connValue)
+		{
+			if ($this->connectionFieldsCallback === null)
+			{
+				return null;
+			}
+			$fields = ($this->connectionFieldsCallback)();
+			if (!isset($fields[$field]['resolve']))
+			{
+				return null;
+			}
+			return $fields[$field]['resolve']($connValue);
 		}
 		public function resolveValue($v)
 		{
@@ -90,6 +105,27 @@ namespace {
 	/**
 	 * @return array{ok:bool,result:mixed,error:string}
 	 */
+	/**
+	 * @return array{ok:bool,result:mixed,error:string}
+	 */
+	function allowlistUnitGqlRunQuery($gqlHarness, $field, array $args)
+	{
+		$resolvers = $gqlHarness->readQueryResolvers();
+		if (!isset($resolvers[$field]))
+		{
+			return array('ok' => false, 'result' => null, 'error' => 'unknown query');
+		}
+		try
+		{
+			$result = $resolvers[$field](null, $args);
+			return array('ok' => true, 'result' => $result, 'error' => '');
+		}
+		catch (\GraphQL\Error\UserError $e)
+		{
+			return array('ok' => false, 'result' => null, 'error' => $e->getMessage());
+		}
+	}
+
 	function allowlistUnitGqlRunMutation($gqlHarness, $name, array $input)
 	{
 		$mutations = $gqlHarness->writeMutationCallbacks();
