@@ -262,6 +262,7 @@ namespace FreePBX\modules\Api\Gql {
 	{
 		public $freepbx;
 		public $typeContainer;
+		public $unitGqlReadScopeAllowed = true;
 		protected $module = 'allowlist';
 		public function checkAllWriteScope()
 		{
@@ -269,7 +270,7 @@ namespace FreePBX\modules\Api\Gql {
 		}
 		public function checkAllReadScope()
 		{
-			return true;
+			return $this->unitGqlReadScopeAllowed;
 		}
 		protected function getNodeDefinition()
 		{

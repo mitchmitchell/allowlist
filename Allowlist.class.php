@@ -3047,7 +3047,12 @@ class Allowlist implements BMO
     public function routeAdd($id, $ld, $sd, $listId = self::DEFAULT_LIST_ID)
     {
         $this->lastError = '';
-        $int = function ($v) { return is_int($v) || (is_string($v) && preg_match('/^[0-9]{1,6}$/D', $v)); };
+        $int = function ($v) {
+            if (is_int($v)) {
+                return $v >= 0 && $v <= 999999;
+            }
+            return is_string($v) && preg_match('/^[0-9]{1,6}$/D', $v);
+        };
         if (!$int($id) || !$int($ld) || !$int($sd) || (int)$sd < self::AUTOADD_MIN_STOCOUNT)
         {
             $this->lastError = sprintf(_('Route id and digit counts must be whole numbers; digits to keep must be at least %d.'), self::AUTOADD_MIN_STOCOUNT);

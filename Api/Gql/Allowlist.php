@@ -364,6 +364,9 @@ class Allowlist extends Base {
 								return null;
 							}
 							$relay = Relay::fromGlobalId($args['id']);
+							if (!isset($relay['type']) || $relay['type'] !== 'allowlist') {
+								return null;
+							}
 							$localId = isset($relay['id']) ? $relay['id'] : '';
 							$parsed = AllowlistModule::parseGqlAllowlistNodeLocalId($localId);
 							if ($parsed === false)
@@ -427,18 +430,21 @@ class Allowlist extends Base {
 			return [$this->getNodeDefinition()['nodeInterface']];
 		});
 		$listType->setGetNodeCallback(function ($id) {
+			if (!$this->checkAllReadScope()) {
+				return null;
+			}
 			return $this->freepbx->Allowlist->findAllowlistListSummaryById($id);
 		});
 		$listType->addFieldCallback(function() {
 			return [
 				'id' => Relay::globalIdField('allowlistList', function ($row) {
-					return (string)$row['id'];
+					return (string)($row['id'] ?? '');
 				}),
 				'name' => [
 					'type' => Type::nonNull(Type::string()),
 					'description' => _('Display name'),
 					'resolve' => function ($row) {
-						return AllowlistModule::formatListNameForDisplay(isset($row['name']) ? $row['name'] : '');
+						return isset($row['name']) ? $row['name'] : '';
 					}
 				],
 				'memberCount' => [
@@ -476,6 +482,16 @@ class Allowlist extends Base {
 		});
 
 		$user->setGetNodeCallback(function($id) {
+			if (!$this->checkAllReadScope()) {
+				return null;
+			}
+			$relay = Relay::fromGlobalId($id);
+			if (isset($relay['type']) && $relay['type'] !== '') {
+				if ($relay['type'] !== 'allowlist') {
+					return null;
+				}
+				$id = isset($relay['id']) ? $relay['id'] : '';
+			}
 			$parsed = AllowlistModule::parseGqlAllowlistNodeLocalId($id);
 			if ($parsed === false)
 			{
@@ -494,7 +510,7 @@ class Allowlist extends Base {
 			return [
 				'id' => Relay::globalIdField('allowlist', function($row) {
 					$listId = isset($row['listId']) ? $row['listId'] : AllowlistModule::DEFAULT_LIST_ID;
-					$localId = AllowlistModule::formatGqlAllowlistNodeLocalId($listId, $row['number']);
+					$localId = AllowlistModule::formatGqlAllowlistNodeLocalId($listId, $row['number'] ?? '');
 					return $localId !== false ? $localId : '';
 				}),
 				'number' => [
