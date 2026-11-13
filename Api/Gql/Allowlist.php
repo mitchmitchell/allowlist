@@ -81,19 +81,14 @@ class Allowlist extends Base {
 						],
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
-							$listId = $this->resolveMemberListIdArg(isset($input['listId']) ? $input['listId'] : null);
-							$entry = $allowlist->checkEntry([
-								'number' => isset($input['number']) ? $input['number'] : null,
-								'description' => isset($input['description']) ? $input['description'] : null,
-							]);
-							if (!$entry || !$allowlist->listMemberAdd($listId, $entry)) {
+							$row = $allowlist->applyGraphqlAddAllowlistMember(
+								isset($input['listId']) ? $input['listId'] : null,
+								isset($input['number']) ? $input['number'] : null,
+								isset($input['description']) ? $input['description'] : null
+							);
+							if ($row === false) {
 								throw new UserError($allowlist->getLastError());
 							}
-							$row = $allowlist->findListMember($listId, $entry['number']);
-							if ($row === null) {
-								throw new UserError(_('Could not load the allowlist entry after adding it.'));
-							}
-							$row['listId'] = $listId;
 							return $row;
 						}
 					]),
@@ -120,12 +115,14 @@ class Allowlist extends Base {
 						],
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
-							$listId = $this->resolveMemberListIdArg(isset($input['listId']) ? $input['listId'] : null);
-							if (!$allowlist->listMemberDel($listId, isset($input['number']) ? $input['number'] : null)) {
+							$payload = $allowlist->applyGraphqlRemoveAllowlistMember(
+								isset($input['listId']) ? $input['listId'] : null,
+								isset($input['number']) ? $input['number'] : null
+							);
+							if ($payload === false) {
 								throw new UserError($allowlist->getLastError());
 							}
-							$localId = AllowlistModule::formatGqlAllowlistNodeLocalId($listId, isset($input['number']) ? $input['number'] : '');
-							return ['id' => $localId !== false ? $localId : ''];
+							return $payload;
 						}
 					]),
 					'addAllowlistList' => Relay::mutationWithClientMutationId([
@@ -147,19 +144,11 @@ class Allowlist extends Base {
 						],
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
-							$listId = $allowlist->listCreate(isset($input['name']) ? $input['name'] : '');
-							if ($listId === false) {
+							$row = $allowlist->applyGraphqlCreateAllowlistList(isset($input['name']) ? $input['name'] : '');
+							if ($row === false) {
 								throw new UserError($allowlist->getLastError());
 							}
-							$summary = $allowlist->summarizeAllowlistsForGraphql();
-							foreach ($summary as $row)
-							{
-								if ((int)$row['id'] === (int)$listId)
-								{
-									return $row;
-								}
-							}
-							throw new UserError(_('Could not load the allowlist after creating it.'));
+							return $row;
 						}
 					]),
 					'renameAllowlistList' => Relay::mutationWithClientMutationId([
@@ -185,19 +174,14 @@ class Allowlist extends Base {
 						],
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
-							$listId = $this->resolveMemberListIdArg(isset($input['id']) ? $input['id'] : null, true);
-							if (!$allowlist->listRename($listId, isset($input['name']) ? $input['name'] : '')) {
+							$row = $allowlist->applyGraphqlRenameAllowlistList(
+								isset($input['id']) ? $input['id'] : null,
+								isset($input['name']) ? $input['name'] : ''
+							);
+							if ($row === false) {
 								throw new UserError($allowlist->getLastError());
 							}
-							$summary = $allowlist->summarizeAllowlistsForGraphql();
-							foreach ($summary as $row)
-							{
-								if ((int)$row['id'] === (int)$listId)
-								{
-									return $row;
-								}
-							}
-							throw new UserError(_('Could not load the allowlist after renaming it.'));
+							return $row;
 						}
 					]),
 					'removeAllowlistList' => Relay::mutationWithClientMutationId([
@@ -219,15 +203,11 @@ class Allowlist extends Base {
 						],
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
-							$listId = $this->resolveMemberListIdArg(isset($input['id']) ? $input['id'] : null, true);
-							$deletedId = $allowlist->graphqlRemoveAllowlistListDeletedIdPayload($listId);
-							if ($deletedId === false) {
-								throw new UserError(_('Could not format the deleted allowlist id.'));
-							}
-							if (!$allowlist->listDelete($listId)) {
+							$payload = $allowlist->applyGraphqlRemoveAllowlistList(isset($input['id']) ? $input['id'] : null);
+							if ($payload === false) {
 								throw new UserError($allowlist->getLastError());
 							}
-							return ['id' => $deletedId];
+							return $payload;
 						}
 					]),
 					'setInboundRouteAllowlist' => Relay::mutationWithClientMutationId([

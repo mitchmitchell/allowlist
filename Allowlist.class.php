@@ -536,7 +536,7 @@ class Allowlist implements BMO
     }
 
     /**
-     * @return array{listId:?int}|false
+     * @return array{listId:?string}|false
      */
     public function applyGraphqlInboundRouteAllowlist($did, $cid, $listIdRaw, $listIdProvided)
     {
@@ -591,7 +591,7 @@ class Allowlist implements BMO
     }
 
     /**
-     * @return array{listId:?int}|false
+     * @return array{listId:?string}|false
      */
     public function applyGraphqlOutboundRouteAllowlist($routeId, $remove, $store, $listIdRaw, $listIdProvided)
     {
@@ -658,6 +658,141 @@ class Allowlist implements BMO
     {
         $payload = self::formatGraphqlListIdPayload($listId);
         return $payload === null ? false : $payload;
+    }
+
+    const GQL_ALLOWLIST_ENTRY_RELAY_TYPE = 'allowlist';
+
+    /**
+     * @return string|false
+     */
+    public static function formatGqlAllowlistEntryRelayGlobalId($listId, $number)
+    {
+        $localId = self::formatGqlAllowlistNodeLocalId($listId, $number);
+        if ($localId === false)
+        {
+            return false;
+        }
+        return base64_encode(self::GQL_ALLOWLIST_ENTRY_RELAY_TYPE . ':' . $localId);
+    }
+
+    /**
+     * @return array{number:string,description:string,listId:int}|false
+     */
+    public function applyGraphqlAddAllowlistMember($listIdRaw, $number, $description)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, false);
+        if ($listId === false)
+        {
+            return false;
+        }
+        $entry = $this->checkEntry(array(
+            'number' => $number,
+            'description' => $description,
+        ));
+        if (!$entry || !$this->listMemberAdd($listId, $entry))
+        {
+            return false;
+        }
+        $row = $this->findListMember($listId, $entry['number']);
+        if ($row === null)
+        {
+            $this->lastError = _('Could not load the allowlist entry after adding it.');
+            return false;
+        }
+        $row['listId'] = $listId;
+        return $row;
+    }
+
+    /**
+     * @return array{id:string}|false
+     */
+    public function applyGraphqlRemoveAllowlistMember($listIdRaw, $number)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, false);
+        if ($listId === false)
+        {
+            return false;
+        }
+        if (!$this->listMemberDel($listId, $number))
+        {
+            return false;
+        }
+        $deletedId = self::formatGqlAllowlistEntryRelayGlobalId($listId, $number);
+        if ($deletedId === false)
+        {
+            $this->lastError = _('Could not format the removed allowlist entry id.');
+            return false;
+        }
+        return array('id' => $deletedId);
+    }
+
+    /**
+     * @return array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}|false
+     */
+    public function applyGraphqlCreateAllowlistList($name)
+    {
+        $listId = $this->listCreate($name);
+        if ($listId === false)
+        {
+            return false;
+        }
+        foreach ($this->summarizeAllowlistsForGraphql() as $row)
+        {
+            if ((int)$row['id'] === (int)$listId)
+            {
+                return $row;
+            }
+        }
+        $this->lastError = _('Could not load the allowlist after creating it.');
+        return false;
+    }
+
+    /**
+     * @return array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}|false
+     */
+    public function applyGraphqlRenameAllowlistList($listIdRaw, $name)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, true);
+        if ($listId === false)
+        {
+            return false;
+        }
+        if (!$this->listRename($listId, $name))
+        {
+            return false;
+        }
+        foreach ($this->summarizeAllowlistsForGraphql() as $row)
+        {
+            if ((int)$row['id'] === (int)$listId)
+            {
+                return $row;
+            }
+        }
+        $this->lastError = _('Could not load the allowlist after renaming it.');
+        return false;
+    }
+
+    /**
+     * @return array{id:string}|false
+     */
+    public function applyGraphqlRemoveAllowlistList($listIdRaw)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, true);
+        if ($listId === false)
+        {
+            return false;
+        }
+        $deletedId = $this->graphqlRemoveAllowlistListDeletedIdPayload($listId);
+        if ($deletedId === false)
+        {
+            $this->lastError = _('Could not format the deleted allowlist id.');
+            return false;
+        }
+        if (!$this->listDelete($listId))
+        {
+            return false;
+        }
+        return array('id' => $deletedId);
     }
 
     public function logGraphqlInboundRouteAllowlistChange($did, $cid, $listIdOrNull)
