@@ -229,6 +229,615 @@ class Allowlist implements BMO
         return self::findInList($this->getAllowlist(), $number);
     }
 
+    /**
+     * @return array|null Row with number and description
+     */
+    public function findListMember($listId, $number)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            return null;
+        }
+        return self::findInList($this->listMemberGetAll($id), $number);
+    }
+
+    /**
+     * Relay local id for an allowlist entry node (list 1 uses the bare number).
+     *
+     * @return string|false
+     */
+    public static function formatGqlAllowlistNodeLocalId($listId, $number)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            return false;
+        }
+        $n = self::normalizeNumber($number);
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            if ($n !== false)
+            {
+                return $n;
+            }
+            if (self::isLegacyDefaultListMemberKey((string)$number))
+            {
+                return (string)$number;
+            }
+            return false;
+        }
+        if ($n === false)
+        {
+            return false;
+        }
+        return $id . ':' . $n;
+    }
+
+    public static function isLegacyDefaultListMemberKey($key)
+    {
+        if (!is_string($key) || $key === '')
+        {
+            return false;
+        }
+        if (self::normalizeNumber($key) !== false)
+        {
+            return false;
+        }
+        if (in_array($key, self::RESERVED_KEYS, true))
+        {
+            return false;
+        }
+        foreach (self::RESERVED_PREFIXES as $prefix)
+        {
+            if (strpos($key, $prefix) === 0)
+            {
+                return false;
+            }
+        }
+        return preg_match('/^[^\/\x00-\x1F\x7F]+$/D', $key) === 1;
+    }
+
+    /**
+     * @return string|null|false
+     */
+    public static function formatGraphqlListIdPayload($listId)
+    {
+        if ($listId === null)
+        {
+            return null;
+        }
+        return self::formatGqlAllowlistListRelayGlobalId($listId);
+    }
+
+    /**
+     * @return array{listId:int,number:string}|false
+     */
+    public static function parseGqlAllowlistNodeLocalId($localId)
+    {
+        if (!is_string($localId) || $localId === '')
+        {
+            return false;
+        }
+        $colon = strpos($localId, ':');
+        if ($colon === false)
+        {
+            $n = self::normalizeNumber($localId);
+            if ($n !== false)
+            {
+                return array('listId' => self::DEFAULT_LIST_ID, 'number' => $n);
+            }
+            if (self::isLegacyDefaultListMemberKey($localId))
+            {
+                return array('listId' => self::DEFAULT_LIST_ID, 'number' => $localId);
+            }
+            return false;
+        }
+        $listPart = substr($localId, 0, $colon);
+        $numPart = substr($localId, $colon + 1);
+        $listId = self::parseListIdValue($listPart);
+        if ($listId === false || $listId === self::DEFAULT_LIST_ID)
+        {
+            return false;
+        }
+        $n = self::normalizeNumber($numPart);
+        if ($n === false)
+        {
+            return false;
+        }
+        return array('listId' => $listId, 'number' => $n);
+    }
+
+    const GQL_ALLOWLIST_LIST_RELAY_TYPE = 'allowlistList';
+
+    /**
+     * @return string|false Base64 Relay global id for an allowlistList node
+     */
+    public static function formatGqlAllowlistListRelayGlobalId($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            return false;
+        }
+        return base64_encode(self::GQL_ALLOWLIST_LIST_RELAY_TYPE . ':' . $id);
+    }
+
+    /**
+     * @return int|false Parsed list id from raw id or allowlistList Relay global id
+     */
+    public static function parseGqlAllowlistListIdInput($raw)
+    {
+        if (!is_scalar($raw))
+        {
+            return false;
+        }
+        $s = (string)$raw;
+        if ($s === '')
+        {
+            return false;
+        }
+        $parsed = self::parseListIdValue($s);
+        if ($parsed !== false)
+        {
+            return $parsed;
+        }
+        $decoded = base64_decode($s, true);
+        if ($decoded === false || strpos($decoded, ':') === false)
+        {
+            return false;
+        }
+        $colon = strpos($decoded, ':');
+        $typeName = substr($decoded, 0, $colon);
+        $localId = substr($decoded, $colon + 1);
+        if ($typeName !== self::GQL_ALLOWLIST_LIST_RELAY_TYPE)
+        {
+            return false;
+        }
+        return self::parseListIdValue($localId);
+    }
+
+    /**
+     * @return int|false
+     */
+    public function resolveGraphqlListIdArg($raw, $required = false)
+    {
+        $this->lastError = '';
+        if ($raw === null || $raw === '')
+        {
+            if ($required)
+            {
+                $this->lastError = _('Unknown allowlist.');
+                return false;
+            }
+            return self::DEFAULT_LIST_ID;
+        }
+        $id = self::parseGqlAllowlistListIdInput($raw);
+        if ($id === false || !$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        return $id;
+    }
+
+    /**
+     * @return int|null|false null clears route assignment; false is an error
+     */
+    public function resolveGraphqlRouteListIdArg($raw)
+    {
+        $this->lastError = '';
+        if ($raw === null || $raw === '')
+        {
+            return null;
+        }
+        $id = self::parseGqlAllowlistListIdInput($raw);
+        if ($id === false || !$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        return $id;
+    }
+
+    /**
+     * @return array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}|null
+     */
+    public function findAllowlistListSummaryById($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false || !$this->listExists($id))
+        {
+            return null;
+        }
+        foreach ($this->summarizeAllowlistsForGraphql() as $row)
+        {
+            if ((int)$row['id'] === (int)$id)
+            {
+                return $row;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param  array $item Row from core_did_list()
+     */
+    public static function coreDidRouteMatches($did, $cid, $item)
+    {
+        if (!is_array($item))
+        {
+            return false;
+        }
+        $wantExt = is_string($did) ? trim($did) : '';
+        $wantCid = is_string($cid) ? trim($cid) : '';
+        $itemExt = trim((string)($item['extension'] ?? ''));
+        $itemCid = trim((string)($item['cidnum'] ?? ''));
+        return $itemExt === $wantExt && $itemCid === $wantCid;
+    }
+
+    public function inboundRouteExistsInCore($did, $cid)
+    {
+        if (!self::validDidCid($did, $cid) || !function_exists('core_did_list'))
+        {
+            return false;
+        }
+        $list = core_did_list();
+        if (!is_array($list))
+        {
+            return false;
+        }
+        foreach ($list as $item)
+        {
+            if (self::coreDidRouteMatches($did, $cid, $item))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function outboundRouteExistsInCore($routeId)
+    {
+        if (!is_scalar($routeId) || !preg_match('/^[0-9]{1,6}$/D', (string)$routeId))
+        {
+            return false;
+        }
+        if (!function_exists('core_routing_list'))
+        {
+            return false;
+        }
+        $list = core_routing_list();
+        if (!is_array($list))
+        {
+            return false;
+        }
+        $want = (int)$routeId;
+        foreach ($list as $item)
+        {
+            if (!is_array($item))
+            {
+                continue;
+            }
+            if ((int)($item['route_id'] ?? 0) === $want)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function signalRouteScreeningDialplanReload()
+    {
+        if (function_exists('needreload'))
+        {
+            needreload();
+        }
+    }
+
+    /**
+     * @return array{listId:?string}|false
+     */
+    public function applyGraphqlInboundRouteAllowlist($did, $cid, $listIdRaw, $listIdProvided)
+    {
+        $this->lastError = '';
+        if (!$listIdProvided)
+        {
+            $this->lastError = _('Specify listId to assign an allowlist, or null to turn screening off.');
+            return false;
+        }
+        if (!self::validDidCid($did, $cid))
+        {
+            $this->lastError = _('DID and caller ID may only contain digits, + and dial-pattern characters.');
+            return false;
+        }
+        if ($listIdRaw === null)
+        {
+            if (!$this->didDelete($did, $cid))
+            {
+                return false;
+            }
+            $this->signalRouteScreeningDialplanReload();
+            $this->logGraphqlInboundRouteAllowlistChange($did, $cid, null);
+            return array('listId' => null);
+        }
+        if (!$this->inboundRouteExistsInCore($did, $cid))
+        {
+            $this->lastError = _('Inbound route not found.');
+            return false;
+        }
+        $listId = $this->resolveGraphqlRouteListIdArg($listIdRaw);
+        if ($listId === false || $listId === null)
+        {
+            if ($this->lastError === '')
+            {
+                $this->lastError = _('Unknown allowlist.');
+            }
+            return false;
+        }
+        if (!$this->didAdd($did, $cid, $listId))
+        {
+            return false;
+        }
+        $this->signalRouteScreeningDialplanReload();
+        $this->logGraphqlInboundRouteAllowlistChange($did, $cid, $listId);
+        $payloadListId = self::formatGraphqlListIdPayload($listId);
+        if ($payloadListId === false)
+        {
+            $this->lastError = _('Could not format the assigned allowlist id.');
+            return false;
+        }
+        return array('listId' => $payloadListId);
+    }
+
+    /**
+     * @return array{listId:?string}|false
+     */
+    public function applyGraphqlOutboundRouteAllowlist($routeId, $remove, $store, $listIdRaw, $listIdProvided)
+    {
+        $this->lastError = '';
+        if (!$listIdProvided)
+        {
+            $this->lastError = _('Specify listId to assign an allowlist, or null to turn auto-add off.');
+            return false;
+        }
+        if (!is_scalar($routeId) || !preg_match('/^[0-9]{1,6}$/D', (string)$routeId))
+        {
+            $this->lastError = _('Invalid outbound route id.');
+            return false;
+        }
+        $rid = (int)$routeId;
+        if ($listIdRaw === null)
+        {
+            if (!$this->routeDelete($rid))
+            {
+                return false;
+            }
+            $this->signalRouteScreeningDialplanReload();
+            $this->logGraphqlOutboundRouteAllowlistChange($rid, null);
+            return array('listId' => null);
+        }
+        if (!$this->outboundRouteExistsInCore($rid))
+        {
+            $this->lastError = _('Outbound route not found.');
+            return false;
+        }
+        $listId = $this->resolveGraphqlRouteListIdArg($listIdRaw);
+        if ($listId === false || $listId === null)
+        {
+            if ($this->lastError === '')
+            {
+                $this->lastError = _('Unknown allowlist.');
+            }
+            return false;
+        }
+        if ($remove === null || $store === null)
+        {
+            $this->lastError = _('remove and store are required when enabling outbound auto-add.');
+            return false;
+        }
+        if (!$this->routeAdd($rid, $remove, $store, $listId))
+        {
+            return false;
+        }
+        $this->signalRouteScreeningDialplanReload();
+        $this->logGraphqlOutboundRouteAllowlistChange($rid, $listId);
+        $payloadListId = self::formatGraphqlListIdPayload($listId);
+        if ($payloadListId === false)
+        {
+            $this->lastError = _('Could not format the assigned allowlist id.');
+            return false;
+        }
+        return array('listId' => $payloadListId);
+    }
+
+    /**
+     * @return string|false
+     */
+    public function graphqlRemoveAllowlistListDeletedIdPayload($listId)
+    {
+        $payload = self::formatGraphqlListIdPayload($listId);
+        return $payload === null ? false : $payload;
+    }
+
+    /**
+     * @return array{number:string,description:string,listId:int}|false
+     */
+    public function applyGraphqlAddAllowlistMember($listIdRaw, $number, $description)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, false);
+        if ($listId === false)
+        {
+            return false;
+        }
+        $entry = $this->checkEntry(array(
+            'number' => $number,
+            'description' => $description,
+        ));
+        if (!$entry)
+        {
+            return false;
+        }
+        if (!$this->listMemberAdd($listId, $entry))
+        {
+            return false;
+        }
+        $row = $this->findListMember($listId, $entry['number']);
+        if ($row === null)
+        {
+            $this->lastError = _('Could not load the allowlist entry after adding it.');
+            return false;
+        }
+        $row['listId'] = $listId;
+        return $row;
+    }
+
+    /**
+     * @return array{id:string}|false
+     */
+    public function applyGraphqlRemoveAllowlistMember($listIdRaw, $number)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, false);
+        if ($listId === false)
+        {
+            return false;
+        }
+        if ($listId === self::DEFAULT_LIST_ID)
+        {
+            if (!$this->listMemberDel($listId, $number))
+            {
+                return false;
+            }
+            return array('id' => $number);
+        }
+        $entry = $this->checkEntry(array('number' => $number));
+        if ($entry === false)
+        {
+            return false;
+        }
+        $deletedId = self::formatGqlAllowlistNodeLocalId($listId, $entry['number']);
+        if ($deletedId === false || $deletedId === '')
+        {
+            $this->lastError = _('Could not format the removed allowlist entry id.');
+            return false;
+        }
+        if (!$this->listMemberDel($listId, $entry['number']))
+        {
+            return false;
+        }
+        return array('id' => $deletedId);
+    }
+
+    /**
+     * @return array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}|false
+     */
+    public function applyGraphqlCreateAllowlistList($name)
+    {
+        $listId = $this->listCreate($name);
+        if ($listId === false)
+        {
+            return false;
+        }
+        foreach ($this->summarizeAllowlistsForGraphql() as $row)
+        {
+            if ((int)$row['id'] === (int)$listId)
+            {
+                return $row;
+            }
+        }
+        $this->lastError = _('Could not load the allowlist after creating it.');
+        return false;
+    }
+
+    /**
+     * @return array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}|false
+     */
+    public function applyGraphqlRenameAllowlistList($listIdRaw, $name)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, true);
+        if ($listId === false)
+        {
+            return false;
+        }
+        if (!$this->listRename($listId, $name))
+        {
+            return false;
+        }
+        foreach ($this->summarizeAllowlistsForGraphql() as $row)
+        {
+            if ((int)$row['id'] === (int)$listId)
+            {
+                return $row;
+            }
+        }
+        $this->lastError = _('Could not load the allowlist after renaming it.');
+        return false;
+    }
+
+    /**
+     * @return array{id:string}|false
+     */
+    public function applyGraphqlRemoveAllowlistList($listIdRaw)
+    {
+        $listId = $this->resolveGraphqlListIdArg($listIdRaw, true);
+        if ($listId === false)
+        {
+            return false;
+        }
+        $deletedId = $this->graphqlRemoveAllowlistListDeletedIdPayload($listId);
+        if ($deletedId === false)
+        {
+            $this->lastError = _('Could not format the deleted allowlist id.');
+            return false;
+        }
+        if (!$this->listDelete($listId))
+        {
+            return false;
+        }
+        return array('id' => $deletedId);
+    }
+
+    public function logGraphqlInboundRouteAllowlistChange($did, $cid, $listIdOrNull)
+    {
+        $exten = $did . ($cid === '' ? '' : '/' . $cid);
+        if ($listIdOrNull === null)
+        {
+            $this->auditLog('Allowlist GraphQL: inbound route screening disabled at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
+            return;
+        }
+        $this->auditLog('Allowlist GraphQL: inbound route screening set to list ' . (int)$listIdOrNull . ' at ' . $this->maskDidMappingKeyForAudit('did/' . $exten));
+    }
+
+    public function logGraphqlOutboundRouteAllowlistChange($routeId, $listIdOrNull)
+    {
+        if ($listIdOrNull === null)
+        {
+            $this->auditLog('Allowlist GraphQL: outbound route auto-add disabled for route ' . (int)$routeId);
+            return;
+        }
+        $this->auditLog('Allowlist GraphQL: outbound route auto-add assigned to list ' . (int)$listIdOrNull . ' for route ' . (int)$routeId);
+    }
+
+    /**
+     * @return array<int, array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}>
+     */
+    public function summarizeAllowlistsForGraphql()
+    {
+        $out = array();
+        foreach ($this->listGetAll() as $id => $name)
+        {
+            $uses = $this->listRoutesUsingList($id);
+            $out[] = array(
+                'id' => $id,
+                'name' => $name,
+                'memberCount' => count($this->listMemberGetAll($id)),
+                'inboundRoutes' => $uses['inbound'],
+                'outboundRoutes' => $uses['outbound'],
+            );
+        }
+        return $out;
+    }
+
     /** Message for the last rejected numberAdd/numberDel/numberBlock/destinationSet call. */
     public function getLastError()
     {
@@ -2438,7 +3047,12 @@ class Allowlist implements BMO
     public function routeAdd($id, $ld, $sd, $listId = self::DEFAULT_LIST_ID)
     {
         $this->lastError = '';
-        $int = function ($v) { return is_int($v) || (is_string($v) && preg_match('/^[0-9]{1,6}$/D', $v)); };
+        $int = function ($v) {
+            if (is_int($v)) {
+                return $v >= 0 && $v <= 999999;
+            }
+            return is_string($v) && preg_match('/^[0-9]{1,6}$/D', $v);
+        };
         if (!$int($id) || !$int($ld) || !$int($sd) || (int)$sd < self::AUTOADD_MIN_STOCOUNT)
         {
             $this->lastError = sprintf(_('Route id and digit counts must be whole numbers; digits to keep must be at least %d.'), self::AUTOADD_MIN_STOCOUNT);
