@@ -503,7 +503,7 @@ class Allowlist extends Base {
 			return [
 				'id' => Relay::globalIdField('allowlist', function($row) {
 					$listId = isset($row['listId']) ? $row['listId'] : AllowlistModule::DEFAULT_LIST_ID;
-					$localId = (string)$listId . ':' . ($row['number'] ?? '');
+					$localId = AllowlistModule::formatGqlAllowlistNodeLocalId($listId, $row['number'] ?? '');
 					return $localId !== false ? $localId : '';
 				}),
 				'number' => [
