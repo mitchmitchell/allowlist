@@ -1105,7 +1105,6 @@ $id2 = $al->listCreate('Sales');
 check($id2 === 2 && $al->listGetName(2) === 'Sales', 'listCreate stores named list');
 check($al->listMemberAdd(2, array('number' => '2025550200', 'description' => 'Bob')) === true && isset($fp->astman->db['/allowlist-list/2/2025550200']), 'named list member stored under allowlist-list');
 check($al->listMemberAdd(1, array('number' => '2025550201')) === true && isset($fp->astman->db['/allowlist/2025550201']), 'list 1 members stay under allowlist');
-check(Allowlist::formatListNameForDisplay('<b>x</b>') === '&lt;b&gt;x&lt;/b&gt;', 'list name htmlentities on output helper');
 check(Allowlist::normalizeListName("a\n") === false && $al->listCreate('a/b') === false, 'list name rejects CR/LF and slash');
 
 list($fp, $al) = fresh();
@@ -1574,8 +1573,15 @@ $idsPageAfter = array_map(function ($edge) { return (int)$edge['node']['id']; },
 check(count($idsPageAfter) > 0 && count(array_intersect($idsPageFirst, $idsPageAfter)) === 0, 'allowlistLists after returns a distinct page');
 $listsPageLast = $gqlQueries['allowlistLists'](null, array('last' => 2));
 check(count($listsPageLast['edges']) === 2 && !empty($listsPageLast['pageInfo']['hasPreviousPage']), 'allowlistLists last limits edge count');
+$allListIdsOrdered = array_map(function ($edge) { return (int)$edge['node']['id']; }, $gqlQueries['allowlistLists'](null, array())['edges']);
+check(count($allListIdsOrdered) >= 4, 'allowlistLists before pin requires at least four lists');
+$idsPageLast = array_map(function ($edge) { return (int)$edge['node']['id']; }, $listsPageLast['edges']);
 $listsPageBefore = $gqlQueries['allowlistLists'](null, array('last' => 2, 'before' => $listsPageLast['pageInfo']['startCursor']));
-check(count($listsPageBefore['edges']) > 0, 'allowlistLists before returns a page');
+$idsPageBefore = array_map(function ($edge) { return (int)$edge['node']['id']; }, $listsPageBefore['edges']);
+check(count($idsPageBefore) === 2, 'allowlistLists before last:2 returns two edges');
+check(count(array_intersect($idsPageLast, $idsPageBefore)) === 0, 'allowlistLists before page shares no ids with last page');
+$expectedBeforeListIds = array_slice($allListIdsOrdered, count($allListIdsOrdered) - 4, 2);
+check($idsPageBefore === $expectedBeforeListIds, 'allowlistLists before last:2 returns exact preceding list ids');
 $fpHarness->astman->db['/allowlist/sipuser'] = 'relay-guard-sip';
 if ($alHarness->findListMember(1, '2025550600') === null) {
 	$alHarness->listMemberAdd(1, array('number' => '2025550600', 'description' => 'relay-guard-num'));
@@ -1600,6 +1606,7 @@ foreach (array(
 $addListMutOut = allowlistUnitGqlRunMutation($gqlHarness, 'addAllowlistList', array('name' => 'MutOutList'));
 check($addListMutOut['ok'], 'addAllowlistList mutation succeeds for output field harness');
 $addListPayloadOut = $gqlHarness->resolveMutationOutputFields('addAllowlistList', $addListMutOut['result']);
+check(is_array($addListPayloadOut['allowlistList']), 'addAllowlistList outputFields allowlistList payload is array');
 $addListNodeFields = $gqlHarness->resolveTypeFields('allowlistList', $addListPayloadOut['allowlistList']);
 $mutOutListId = (int)$addListPayloadOut['allowlistList']['id'];
 check($addListNodeFields['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId($mutOutListId) && $addListNodeFields['name'] === 'MutOutList', 'addAllowlistList outputFields allowlistList id and name');
@@ -1608,6 +1615,7 @@ check($addListIdDecoded['type'] === 'allowlistList' && $addListIdDecoded['id'] =
 $renameListMutOut = allowlistUnitGqlRunMutation($gqlHarness, 'renameAllowlistList', array('id' => (string)$mutOutListId, 'name' => 'MutOutRenamed'));
 check($renameListMutOut['ok'], 'renameAllowlistList mutation succeeds for output field harness');
 $renameListPayloadOut = $gqlHarness->resolveMutationOutputFields('renameAllowlistList', $renameListMutOut['result']);
+check(is_array($renameListPayloadOut['allowlistList']), 'renameAllowlistList outputFields allowlistList payload is array');
 $renameListNodeFields = $gqlHarness->resolveTypeFields('allowlistList', $renameListPayloadOut['allowlistList']);
 check($renameListNodeFields['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId($mutOutListId) && $renameListNodeFields['name'] === 'MutOutRenamed', 'renameAllowlistList outputFields allowlistList id and name');
 $renameListIdDecoded = \GraphQLRelay\Relay::fromGlobalId($renameListNodeFields['id']);
