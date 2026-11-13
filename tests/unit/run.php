@@ -1575,8 +1575,14 @@ $gqlHarness->unitGqlReadScopeAllowed = true;
 check($gqlHarness->invokeAllowlistGetNode('sipuser') !== null && $gqlHarness->invokeAllowlistListGetNode('2') !== null, 'getNode lookups resolve with allowlist read scope');
 $wrongRelayTypeQuery = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlistList:2')));
 check($wrongRelayTypeQuery === null, 'allowlist query rejects relay global id whose type is not allowlist');
-$wrongRelayTypeGetNode = $gqlHarness->invokeAllowlistGetNode(base64_encode('allowlistList:2'));
-check($wrongRelayTypeGetNode === null, 'allowlist getNode rejects relay global id whose type is not allowlist');
+foreach (array('2025550600', '2025550601', '2025550602') as $defaultListGetNodeNum) {
+	$alHarness->listMemberAdd(1, array('number' => $defaultListGetNodeNum, 'description' => 'getnode-local'));
+	$defaultListGetNodeRow = $gqlHarness->invokeAllowlistGetNode($defaultListGetNodeNum);
+	check($defaultListGetNodeRow !== null && (int)$defaultListGetNodeRow['listId'] === 1 && $defaultListGetNodeRow['number'] === $defaultListGetNodeNum, 'allowlist getNode resolves default-list local id ' . $defaultListGetNodeNum);
+}
+$alHarness->listMemberAdd(2, array('number' => '2025550605', 'description' => 'getnode-named'));
+$namedListGetNodeRow = $gqlHarness->invokeAllowlistGetNode('2:2025550605');
+check($namedListGetNodeRow !== null && (int)$namedListGetNodeRow['listId'] === 2 && $namedListGetNodeRow['number'] === '2025550605', 'allowlist getNode resolves named-list composite local id');
 $badNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:../x')));
 check($badNode === null, 'allowlist query resolve rejects unparseable node id');
 $goodNode = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:2:2025558600')));

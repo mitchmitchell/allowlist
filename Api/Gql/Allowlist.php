@@ -485,13 +485,6 @@ class Allowlist extends Base {
 			if (!$this->checkAllReadScope()) {
 				return null;
 			}
-			$relay = Relay::fromGlobalId($id);
-			if (isset($relay['type']) && $relay['type'] !== '') {
-				if ($relay['type'] !== 'allowlist') {
-					return null;
-				}
-				$id = isset($relay['id']) ? $relay['id'] : '';
-			}
 			$parsed = AllowlistModule::parseGqlAllowlistNodeLocalId($id);
 			if ($parsed === false)
 			{

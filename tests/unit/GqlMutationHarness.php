@@ -229,7 +229,7 @@ namespace GraphQLRelay {
 		}
 		public static function fromGlobalId($id)
 		{
-			$decoded = base64_decode($id, true);
+			$decoded = base64_decode($id);
 			if (!is_string($decoded) || $decoded === '')
 			{
 				return array('type' => '', 'id' => '');
