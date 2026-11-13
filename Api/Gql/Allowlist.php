@@ -438,7 +438,7 @@ class Allowlist extends Base {
 		$listType->addFieldCallback(function() {
 			return [
 				'id' => Relay::globalIdField('allowlistList', function ($row) {
-					return base64_encode('allowlistList:99');
+					return (string)($row['id'] ?? '');
 				}),
 				'name' => [
 					'type' => Type::nonNull(Type::string()),
