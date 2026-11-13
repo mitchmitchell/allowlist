@@ -142,8 +142,6 @@ function allowlistUnitGqlInvokeExtractor($gqlHarness, $method, array $input) {
 		return array('ok' => true, 'result' => $result, 'error' => '');
 	} catch (\GraphQL\Error\UserError $e) {
 		return array('ok' => false, 'result' => null, 'error' => $e->getMessage());
-	} catch (\ReflectionException $e) {
-		return array('ok' => false, 'result' => null, 'error' => $e->getMessage());
 	}
 }
 function allowlistUnitGqlMutateDelegationExpected($mutationName) {
@@ -1540,6 +1538,10 @@ $list2IdField = $gqlHarness->resolveTypeFields('allowlistList', $list2SummaryGql
 check($list1IdField['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId(1), 'allowlistList id field exact global id for list 1');
 check($list2IdField['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId(2), 'allowlistList id field exact global id for list 2');
 check($list1IdField['id'] !== $list2IdField['id'], 'allowlistList id field global ids differ by list id');
+$list1SummaryDecoded = \GraphQLRelay\Relay::fromGlobalId($list1IdField['id']);
+$list2SummaryDecoded = \GraphQLRelay\Relay::fromGlobalId($list2IdField['id']);
+check($list1SummaryDecoded['type'] === 'allowlistList' && $list1SummaryDecoded['id'] === '1', 'allowlistList id field decodes type and local id for list 1');
+check($list2SummaryDecoded['type'] === 'allowlistList' && $list2SummaryDecoded['id'] === '2', 'allowlistList id field decodes type and local id for list 2');
 $alHarness->listMemberAdd(1, array('number' => '2025550700', 'description' => 'd55-member-l1'));
 $list1MemberGqlRow = $alHarness->findListMember(1, '2025550700');
 $list1MemberGqlRow['listId'] = 1;
@@ -1547,6 +1549,7 @@ $list1MemberIdField = $gqlHarness->resolveTypeFields('allowlist', $list1MemberGq
 check($list1MemberIdField['id'] === base64_encode('allowlist:2025550700'), 'allowlist id field exact global id for list-1 bare member');
 $list1MemberDecoded = \GraphQLRelay\Relay::fromGlobalId($list1MemberIdField['id']);
 check($list1MemberDecoded['type'] === 'allowlist' && $list1MemberDecoded['id'] === '2025550700', 'allowlist id field relay type and local id for list 1');
+check(strpos($list1MemberDecoded['id'], ':') === false, 'allowlist list-1 member local id is bare not 1:n');
 $alHarness->listMemberAdd(2, array('number' => '2025550701', 'description' => 'd55-member-l2'));
 $list2MemberGqlRow = $alHarness->findListMember(2, '2025550701');
 $list2MemberGqlRow['listId'] = 2;
@@ -1560,8 +1563,11 @@ if (!$alHarness->listExists(3)) {
 if (!$alHarness->listExists(4)) {
 	$alHarness->listCreate('PaginateFour');
 }
+$listsAllCount = count($gqlQueries['allowlistLists'](null, array())['edges']);
 $listsPageFirst = $gqlQueries['allowlistLists'](null, array('first' => 2));
-check(count($listsPageFirst['edges']) === 2 && !empty($listsPageFirst['pageInfo']['hasNextPage']), 'allowlistLists first limits edge count');
+check($listsAllCount >= 3 && count($listsPageFirst['edges']) === 2 && !empty($listsPageFirst['pageInfo']['hasNextPage']), 'allowlistLists honors first and omits trailing lists');
+$listsPageOne = $gqlQueries['allowlistLists'](null, array('first' => 1));
+check(count($listsPageOne['edges']) === 1 && $listsAllCount > 1, 'allowlistLists first returns a single edge when more lists exist');
 $listsPageAfter = $gqlQueries['allowlistLists'](null, array('first' => 2, 'after' => $listsPageFirst['pageInfo']['endCursor']));
 $idsPageFirst = array_map(function ($edge) { return (int)$edge['node']['id']; }, $listsPageFirst['edges']);
 $idsPageAfter = array_map(function ($edge) { return (int)$edge['node']['id']; }, $listsPageAfter['edges']);
@@ -1570,41 +1576,63 @@ $listsPageLast = $gqlQueries['allowlistLists'](null, array('last' => 2));
 check(count($listsPageLast['edges']) === 2 && !empty($listsPageLast['pageInfo']['hasPreviousPage']), 'allowlistLists last limits edge count');
 $listsPageBefore = $gqlQueries['allowlistLists'](null, array('last' => 2, 'before' => $listsPageLast['pageInfo']['startCursor']));
 check(count($listsPageBefore['edges']) > 0, 'allowlistLists before returns a page');
-$relayTypeGuardNum = '2025550113';
-if ($alHarness->findListMember(1, $relayTypeGuardNum) === null) {
-	$alHarness->listMemberAdd(1, array('number' => $relayTypeGuardNum, 'description' => 'relay-guard'));
+$fpHarness->astman->db['/allowlist/sipuser'] = 'relay-guard-sip';
+if ($alHarness->findListMember(1, '2025550600') === null) {
+	$alHarness->listMemberAdd(1, array('number' => '2025550600', 'description' => 'relay-guard-num'));
 }
-$wrongRelayListWrap = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlistList:' . $relayTypeGuardNum)));
-$wrongRelayExtensionWrap = $gqlQueries['allowlist'](null, array('id' => base64_encode('extension:' . $relayTypeGuardNum)));
-check($wrongRelayListWrap === null && $wrongRelayExtensionWrap === null, 'allowlist query rejects allowlistList and extension relay types for list-1 member');
-$goodRelayAllowlistWrap = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:' . $relayTypeGuardNum)));
-check($goodRelayAllowlistWrap !== null && $goodRelayAllowlistWrap['number'] === $relayTypeGuardNum, 'allowlist query accepts allowlist relay type for list-1 member');
+if ($alHarness->findListMember(2, '2025550605') === null) {
+	$alHarness->listMemberAdd(2, array('number' => '2025550605', 'description' => 'relay-guard-l2'));
+}
+foreach (array(
+	array('2025550600', 1),
+	array('sipuser', 1),
+	array('2:2025550605', 2),
+) as $relayGuardCase) {
+	$relayLocalId = $relayGuardCase[0];
+	$expectListId = $relayGuardCase[1];
+	foreach (array('allowlistList', 'extension') as $wrongRelayType) {
+		$wrongWrap = $gqlQueries['allowlist'](null, array('id' => base64_encode($wrongRelayType . ':' . $relayLocalId)));
+		check($wrongWrap === null, 'allowlist query rejects ' . $wrongRelayType . ' relay type for existing member ' . $relayLocalId);
+	}
+	$goodWrap = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlist:' . $relayLocalId)));
+	check($goodWrap !== null && (int)$goodWrap['listId'] === $expectListId, 'allowlist query accepts allowlist relay type for member ' . $relayLocalId);
+}
 $addListMutOut = allowlistUnitGqlRunMutation($gqlHarness, 'addAllowlistList', array('name' => 'MutOutList'));
 check($addListMutOut['ok'], 'addAllowlistList mutation succeeds for output field harness');
 $addListPayloadOut = $gqlHarness->resolveMutationOutputFields('addAllowlistList', $addListMutOut['result']);
 $addListNodeFields = $gqlHarness->resolveTypeFields('allowlistList', $addListPayloadOut['allowlistList']);
 $mutOutListId = (int)$addListPayloadOut['allowlistList']['id'];
 check($addListNodeFields['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId($mutOutListId) && $addListNodeFields['name'] === 'MutOutList', 'addAllowlistList outputFields allowlistList id and name');
+$addListIdDecoded = \GraphQLRelay\Relay::fromGlobalId($addListNodeFields['id']);
+check($addListIdDecoded['type'] === 'allowlistList' && $addListIdDecoded['id'] === (string)$mutOutListId, 'addAllowlistList outputFields allowlistList id decodes type and local id');
 $renameListMutOut = allowlistUnitGqlRunMutation($gqlHarness, 'renameAllowlistList', array('id' => (string)$mutOutListId, 'name' => 'MutOutRenamed'));
 check($renameListMutOut['ok'], 'renameAllowlistList mutation succeeds for output field harness');
 $renameListPayloadOut = $gqlHarness->resolveMutationOutputFields('renameAllowlistList', $renameListMutOut['result']);
 $renameListNodeFields = $gqlHarness->resolveTypeFields('allowlistList', $renameListPayloadOut['allowlistList']);
 check($renameListNodeFields['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId($mutOutListId) && $renameListNodeFields['name'] === 'MutOutRenamed', 'renameAllowlistList outputFields allowlistList id and name');
+$renameListIdDecoded = \GraphQLRelay\Relay::fromGlobalId($renameListNodeFields['id']);
+check($renameListIdDecoded['type'] === 'allowlistList' && $renameListIdDecoded['id'] === (string)$mutOutListId, 'renameAllowlistList outputFields allowlistList id decodes type and local id');
 $removeListMutOut = allowlistUnitGqlRunMutation($gqlHarness, 'removeAllowlistList', array('id' => (string)$mutOutListId));
 check($removeListMutOut['ok'], 'removeAllowlistList mutation succeeds for output field harness');
 $removeListPayloadOut = $gqlHarness->resolveMutationOutputFields('removeAllowlistList', $removeListMutOut['result']);
 check($removeListPayloadOut['deletedId'] === Allowlist::formatGqlAllowlistListRelayGlobalId($mutOutListId), 'removeAllowlistList outputFields deletedId global id');
+$removeListIdDecoded = \GraphQLRelay\Relay::fromGlobalId($removeListPayloadOut['deletedId']);
+check($removeListIdDecoded['type'] === 'allowlistList' && $removeListIdDecoded['id'] === (string)$mutOutListId, 'removeAllowlistList outputFields deletedId decodes type and local id');
 $unit_core_did_list = array(array('extension' => '5550702', 'cidnum' => '', 'pricid' => false));
 $setInboundMutOut = allowlistUnitGqlRunMutation($gqlHarness, 'setInboundRouteAllowlist', array('did' => '5550702', 'cid' => '', 'listId' => '1'));
 check($setInboundMutOut['ok'], 'setInboundRouteAllowlist mutation succeeds for output field harness');
 $setInboundPayloadOut = $gqlHarness->resolveMutationOutputFields('setInboundRouteAllowlist', $setInboundMutOut['result']);
 check($setInboundPayloadOut['listId'] === Allowlist::formatGqlAllowlistListRelayGlobalId(1), 'setInboundRouteAllowlist outputFields listId global id');
+$setInboundListDecoded = \GraphQLRelay\Relay::fromGlobalId($setInboundPayloadOut['listId']);
+check($setInboundListDecoded['type'] === 'allowlistList' && $setInboundListDecoded['id'] === '1', 'setInboundRouteAllowlist outputFields listId decodes type and local id');
 $unit_core_routing_list = array(array('route_id' => 9, 'name' => 'UnitRoute'));
 $setOutboundMutOut = allowlistUnitGqlRunMutation($gqlHarness, 'setOutboundRouteAllowlist', array('routeId' => '9', 'listId' => '2', 'remove' => 0, 'store' => 10));
 check($setOutboundMutOut['ok'], 'setOutboundRouteAllowlist mutation succeeds for output field harness');
 $setOutboundPayloadOut = $gqlHarness->resolveMutationOutputFields('setOutboundRouteAllowlist', $setOutboundMutOut['result']);
 check($setOutboundPayloadOut['listId'] === Allowlist::formatGqlAllowlistListRelayGlobalId(2), 'setOutboundRouteAllowlist outputFields listId global id');
-check(strpos($gql, 'escape before showing in HTML') !== false, 'allowlistList name field description documents raw unescaped value');
+$setOutboundListDecoded = \GraphQLRelay\Relay::fromGlobalId($setOutboundPayloadOut['listId']);
+check($setOutboundListDecoded['type'] === 'allowlistList' && $setOutboundListDecoded['id'] === '2', 'setOutboundRouteAllowlist outputFields listId decodes type and local id');
+check(strpos($gql, 'returned as stored (raw, unescaped)') !== false, 'allowlistList name field description documents raw unescaped value');
 check((int)$listFieldsHarness['memberCount'] === $countList2, 'allowlistList memberCount field matches AstDB members');
 $alHarness->didAdd('5550990', '', 2);
 $unit_core_did_list = array(array('extension' => '5550990', 'cidnum' => '', 'pricid' => false));
@@ -1645,8 +1673,6 @@ $gqlHarness->unitGqlReadScopeAllowed = false;
 check($gqlHarness->invokeAllowlistGetNode('sipuser') === null && $gqlHarness->invokeAllowlistListGetNode('2') === null, 'getNode lookups null without allowlist read scope');
 $gqlHarness->unitGqlReadScopeAllowed = true;
 check($gqlHarness->invokeAllowlistGetNode('sipuser') !== null && $gqlHarness->invokeAllowlistListGetNode('2') !== null, 'getNode lookups resolve with allowlist read scope');
-$wrongRelayTypeQuery = $gqlQueries['allowlist'](null, array('id' => base64_encode('allowlistList:2')));
-check($wrongRelayTypeQuery === null, 'allowlist query rejects relay global id whose type is not allowlist');
 foreach (array('2025550600', '2025550601', '2025550602') as $defaultListGetNodeNum) {
 	$alHarness->listMemberAdd(1, array('number' => $defaultListGetNodeNum, 'description' => 'getnode-local'));
 	$defaultListGetNodeRow = $gqlHarness->invokeAllowlistGetNode($defaultListGetNodeNum);

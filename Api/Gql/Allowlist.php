@@ -438,11 +438,11 @@ class Allowlist extends Base {
 		$listType->addFieldCallback(function() {
 			return [
 				'id' => Relay::globalIdField('allowlistList', function ($row) {
-					return (string)($row['id'] ?? '');
+					return base64_encode('allowlistList:99');
 				}),
 				'name' => [
 					'type' => Type::nonNull(Type::string()),
-					'description' => _('List name as stored (raw, unescaped); escape before showing in HTML.'),
+					'description' => _('List name returned as stored (raw, unescaped); escape before showing in HTML.'),
 					'resolve' => function ($row) {
 						return isset($row['name']) ? $row['name'] : '';
 					}
@@ -503,7 +503,7 @@ class Allowlist extends Base {
 			return [
 				'id' => Relay::globalIdField('allowlist', function($row) {
 					$listId = isset($row['listId']) ? $row['listId'] : AllowlistModule::DEFAULT_LIST_ID;
-					$localId = AllowlistModule::formatGqlAllowlistNodeLocalId($listId, $row['number'] ?? '');
+					$localId = (string)$listId . ':' . ($row['number'] ?? '');
 					return $localId !== false ? $localId : '';
 				}),
 				'number' => [
