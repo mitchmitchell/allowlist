@@ -5,6 +5,9 @@ require __DIR__ . '/bootstrap.php';
 $root = dirname(__DIR__, 2);
 require $root . '/Allowlist.class.php';
 require __DIR__ . '/AllowlistListMutationTestHarness.php';
+require __DIR__ . '/GqlMutationHarness.php';
+require $root . '/Api/Gql/Allowlist.php';
+require __DIR__ . '/GqlMutationHarnessAllowlist.php';
 require $root . '/agi-bin/allowlist-common.php';
 require $root . '/Restore.php';
 
@@ -124,6 +127,21 @@ function allowlistUnitGqlMutationFieldTypesBody($gql, $mutationName) {
 		}
 	}
 	return '';
+}
+function allowlistUnitNormalizePhpSnippet($snippet) {
+	return trim(preg_replace('/\s+/', ' ', $snippet));
+}
+function allowlistUnitGqlMutateDelegationExpected($mutationName) {
+	$map = array(
+		'addAllowlist' => 'gqlMutateAddAllowlist',
+		'removeAllowlist' => 'gqlMutateRemoveAllowlist',
+		'addAllowlistList' => 'gqlMutateAddAllowlistList',
+		'renameAllowlistList' => 'gqlMutateRenameAllowlistList',
+		'removeAllowlistList' => 'gqlMutateRemoveAllowlistList',
+		'setInboundRouteAllowlist' => 'gqlMutateSetInboundRouteAllowlist',
+		'setOutboundRouteAllowlist' => 'gqlMutateSetOutboundRouteAllowlist',
+	);
+	return isset($map[$mutationName]) ? "return \$this->{$map[$mutationName]}(\$input);" : '';
 }
 function allowlistUnitUnlinkIfExists($path) {
 	if (is_string($path) && $path !== '' && (is_file($path) || is_link($path))) {
@@ -260,7 +278,12 @@ check(preg_match('/checkAllReadScope\(\)\)[\s\S]*allowlistLists/', $gql) === 1, 
 check(substr_count($gql, "'addAllowlistList' =>") === 1, 'addAllowlistList defined once (write scope gate)');
 $alSrc = file_get_contents($root . '/Allowlist.class.php');
 check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlAddAllowlistMember', 'findListMember'), 'applyGraphqlAddAllowlistMember reloads entry via findListMember');
-check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlRemoveAllowlistMember', 'formatGqlAllowlistEntryRelayGlobalId'), 'applyGraphqlRemoveAllowlistMember formats Relay global deletedId');
+$removeMemberApply = allowlistUnitExtractFunctionBody($alSrc, 'applyGraphqlRemoveAllowlistMember');
+check(strpos($removeMemberApply, 'checkEntry') !== false && strpos($removeMemberApply, 'listMemberDel') !== false && strpos($removeMemberApply, 'checkEntry') < strpos($removeMemberApply, 'listMemberDel'), 'applyGraphqlRemoveAllowlistMember validates entry before delete');
+check(strpos($removeMemberApply, 'formatGqlAllowlistEntryRelayGlobalId') === false, 'applyGraphqlRemoveAllowlistMember does not use entry Relay global id');
+$removeListApply = allowlistUnitExtractFunctionBody($alSrc, 'applyGraphqlRemoveAllowlistList');
+check(strpos($removeListApply, 'graphqlRemoveAllowlistListDeletedIdPayload') !== false && strpos($removeListApply, 'listDelete') !== false && strpos($removeListApply, 'graphqlRemoveAllowlistListDeletedIdPayload') < strpos($removeListApply, 'listDelete'), 'applyGraphqlRemoveAllowlistList formats deletedId before listDelete');
+check(strpos($gql, 'resolveRouteListIdArg') === false, 'dead resolveRouteListIdArg removed from GraphQL layer');
 check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlListIdArg', 'listExists($id)'), 'resolveGraphqlListIdArg enforces listExists');
 check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlListIdArg', 'DEFAULT_LIST_ID'), 'resolveGraphqlListIdArg pins default list 1');
 check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlListIdArg', '$required'), 'resolveGraphqlListIdArg pins required allowlist id branch');
@@ -268,12 +291,15 @@ check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlRouteListIdArg', 
 check(strpos($gql, "array_key_exists('listId', \$input)") !== false, 'route setters require listId key in GraphQL input');
 check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlInboundRouteAllowlist', 'signalRouteScreeningDialplanReload'), 'inbound GraphQL route assign signals dialplan reload');
 check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlOutboundRouteAllowlist', 'signalRouteScreeningDialplanReload'), 'outbound GraphQL route assign signals dialplan reload');
-$removeListMutate = allowlistUnitGqlMutateCallbackBody($gql, 'removeAllowlistList');
-check(strpos($removeListMutate, 'applyGraphqlRemoveAllowlistList') !== false && strpos($removeListMutate, "return \$payload") !== false, 'removeAllowlistList resolver delegates deletedId payload');
-$setInboundMutate = allowlistUnitGqlMutateCallbackBody($gql, 'setInboundRouteAllowlist');
-check(strpos($setInboundMutate, 'applyGraphqlInboundRouteAllowlist') !== false && strpos($setInboundMutate, "'listId' => \$result['listId']") !== false, 'setInboundRouteAllowlist resolver passes apply listId payload');
-$setOutboundMutate = allowlistUnitGqlMutateCallbackBody($gql, 'setOutboundRouteAllowlist');
-check(strpos($setOutboundMutate, 'applyGraphqlOutboundRouteAllowlist') !== false && strpos($setOutboundMutate, "'listId' => \$result['listId']") !== false, 'setOutboundRouteAllowlist resolver passes apply listId payload');
+foreach (array('addAllowlist', 'removeAllowlist', 'addAllowlistList', 'renameAllowlistList', 'removeAllowlistList', 'setInboundRouteAllowlist', 'setOutboundRouteAllowlist') as $gqlMutName) {
+	$mutBody = allowlistUnitGqlMutateCallbackBody($gql, $gqlMutName);
+	$expected = allowlistUnitGqlMutateDelegationExpected($gqlMutName);
+	check(allowlistUnitNormalizePhpSnippet($mutBody) === allowlistUnitNormalizePhpSnippet('{ ' . $expected . ' }'), $gqlMutName . ' mutateAndGetPayload is one-line gqlMutate delegation');
+}
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateSetInboundRouteAllowlist', 'applyGraphqlInboundRouteAllowlist'), 'gqlMutateSetInboundRouteAllowlist delegates to applyGraphqlInboundRouteAllowlist');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateSetOutboundRouteAllowlist', 'applyGraphqlOutboundRouteAllowlist'), 'gqlMutateSetOutboundRouteAllowlist delegates to applyGraphqlOutboundRouteAllowlist');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateSetInboundRouteAllowlist', "'listId' => \$result['listId']"), 'gqlMutateSetInboundRouteAllowlist returns listId payload field');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateSetOutboundRouteAllowlist', "'listId' => \$result['listId']"), 'gqlMutateSetOutboundRouteAllowlist returns listId payload field');
 $setOutboundFields = allowlistUnitGqlMutationFieldTypesBody($gql, 'setOutboundRouteAllowlist');
 check(strpos($setOutboundFields, "'remove'") !== false && preg_match("/'remove'\\s*=>\\s*\\[[^\\]]*'type'\\s*=>\\s*Type::int\\(\\)/s", $setOutboundFields) === 1, 'setOutboundRouteAllowlist remove is nullable int');
 check(strpos($setOutboundFields, "'store'") !== false && preg_match("/'store'\\s*=>\\s*\\[[^\\]]*'type'\\s*=>\\s*Type::int\\(\\)/s", $setOutboundFields) === 1, 'setOutboundRouteAllowlist store is nullable int');
@@ -288,12 +314,11 @@ check(strpos($inApplyBody, 'validDidCid') !== false && strpos($inApplyBody, 'val
 check(strpos($outApplyBody, 'preg_match') !== false && strpos($outApplyBody, 'preg_match') < strpos($outApplyBody, 'listIdRaw === null'), 'applyGraphqlOutboundRouteAllowlist validates routeId before clear');
 check(strpos($inApplyBody, 'if (!$this->didAdd') !== false, 'applyGraphqlInboundRouteAllowlist checks didAdd result');
 check(strpos($outApplyBody, 'if (!$this->routeAdd') !== false, 'applyGraphqlOutboundRouteAllowlist checks routeAdd result');
-$addMemberMutate = allowlistUnitGqlMutateCallbackBody($gql, 'addAllowlist');
-check(strpos($addMemberMutate, 'applyGraphqlAddAllowlistMember') !== false, 'addAllowlist mutation delegates to applyGraphqlAddAllowlistMember');
-$removeMemberMutate = allowlistUnitGqlMutateCallbackBody($gql, 'removeAllowlist');
-check(strpos($removeMemberMutate, 'applyGraphqlRemoveAllowlistMember') !== false, 'removeAllowlist mutation delegates to applyGraphqlRemoveAllowlistMember');
-check(strpos(allowlistUnitGqlMutateCallbackBody($gql, 'renameAllowlistList'), 'applyGraphqlRenameAllowlistList') !== false, 'renameAllowlistList mutation delegates to applyGraphqlRenameAllowlistList');
-check(strpos(allowlistUnitGqlMutateCallbackBody($gql, 'removeAllowlistList'), 'applyGraphqlRemoveAllowlistList') !== false, 'removeAllowlistList mutation delegates to applyGraphqlRemoveAllowlistList');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateAddAllowlist', 'applyGraphqlAddAllowlistMember'), 'gqlMutateAddAllowlist wraps applyGraphqlAddAllowlistMember');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateRemoveAllowlist', 'applyGraphqlRemoveAllowlistMember'), 'gqlMutateRemoveAllowlist wraps applyGraphqlRemoveAllowlistMember');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateAddAllowlistList', 'applyGraphqlCreateAllowlistList'), 'gqlMutateAddAllowlistList wraps applyGraphqlCreateAllowlistList');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateRenameAllowlistList', 'applyGraphqlRenameAllowlistList'), 'gqlMutateRenameAllowlistList wraps applyGraphqlRenameAllowlistList');
+check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateRemoveAllowlistList', 'applyGraphqlRemoveAllowlistList'), 'gqlMutateRemoveAllowlistList wraps applyGraphqlRemoveAllowlistList');
 preg_match('/function queryCallback\(\)[\s\S]*?function initializeTypes/s', $gql, $gqlQueryBlock);
 $gqlQuerySection = $gqlQueryBlock[0] ?? '';
 check(strpos($gqlQuerySection, "'addAllowlistList'") === false && strpos($gqlQuerySection, "'setOutboundRouteAllowlist'") === false, 'write mutations not in queryCallback');
@@ -1219,8 +1244,23 @@ check($al->findListMember(2, '2025553111') === null, 'findListMember does not re
 $addedGql = $al->applyGraphqlAddAllowlistMember(null, '2025553333', 'gql-apply-add');
 check($addedGql !== false && $addedGql['listId'] === 1 && $al->findListMember(1, '2025553333') !== null, 'applyGraphqlAddAllowlistMember adds to default list');
 $removedGql = $al->applyGraphqlRemoveAllowlistMember(null, '2025553333');
-$expectedDeletedGlobal = Allowlist::formatGqlAllowlistEntryRelayGlobalId(1, '2025553333');
-check($removedGql !== false && $removedGql['id'] === $expectedDeletedGlobal && $removedGql['id'] !== Allowlist::formatGqlAllowlistNodeLocalId(1, '2025553333') && strpos(base64_decode($expectedDeletedGlobal), 'allowlist:') === 0, 'applyGraphqlRemoveAllowlistMember returns Relay global deletedId');
+check($removedGql !== false && $removedGql['id'] === '2025553333' && $al->findListMember(1, '2025553333') === null, 'applyGraphqlRemoveAllowlistMember default list returns plain number deletedId');
+check($al->applyGraphqlRemoveAllowlistMember(null, 'not-a-phone;') === false && $al->findListMember(1, '2025553111') !== null, 'applyGraphqlRemoveAllowlistMember rejects invalid number before delete');
+$al->listMemberAdd(2, array('number' => '2025554444', 'description' => 'list2-only'));
+$addedList2 = $al->applyGraphqlAddAllowlistMember('2', '2025554555', 'list2-gql');
+check($addedList2 !== false && (int)$addedList2['listId'] === 2 && $al->findListMember(2, '2025554555') !== null && $al->findListMember(1, '2025554555') === null, 'applyGraphqlAddAllowlistMember list 2 does not add to list 1');
+check($al->applyGraphqlRemoveAllowlistMember(null, '2025559999888') === false, 'applyGraphqlRemoveAllowlistMember missing member does not report success');
+$removedList2 = $al->applyGraphqlRemoveAllowlistMember('2', '2025554555');
+check($removedList2 !== false && $removedList2['id'] === '2:2025554555' && $al->findListMember(2, '2025554555') === null && $al->findListMember(2, '2025554444') !== null, 'applyGraphqlRemoveAllowlistMember list 2 returns composite deletedId');
+check($al->applyGraphqlAddAllowlistMember('2', 'bad', 'x') === false && $al->findListMember(2, 'bad') === null, 'applyGraphqlAddAllowlistMember failure does not leave a member');
+$createRow = $al->applyGraphqlCreateAllowlistList('HarnessList');
+check($createRow !== false && (int)$createRow['id'] >= 3 && $createRow['name'] === 'HarnessList' && $al->listExists((int)$createRow['id']), 'applyGraphqlCreateAllowlistList returns created list summary');
+$renameRow = $al->applyGraphqlRenameAllowlistList((string)$createRow['id'], 'HarnessRenamed');
+check($renameRow !== false && $renameRow['id'] === $createRow['id'] && $renameRow['name'] === 'HarnessRenamed', 'applyGraphqlRenameAllowlistList returns renamed list');
+check($al->applyGraphqlRenameAllowlistList((string)$createRow['id'], '') === false && $renameRow['name'] === 'HarnessRenamed', 'applyGraphqlRenameAllowlistList failure leaves name unchanged');
+$removeListPayload = $al->applyGraphqlRemoveAllowlistList((string)$createRow['id']);
+check($removeListPayload !== false && $removeListPayload['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId((int)$createRow['id']) && $removeListPayload['id'] !== (string)$createRow['id'], 'applyGraphqlRemoveAllowlistList deletedId is Relay global not raw list id');
+check($al->applyGraphqlRemoveAllowlistList((string)$createRow['id']) === false && $al->listExists((int)$createRow['id']) === false, 'applyGraphqlRemoveAllowlistList failure after delete does not report success');
 $al->listMemberDel(1, '2025553111');
 $al->listMemberDel(2, '2025553222');
 $al->auditEntries = array();
@@ -1282,7 +1322,10 @@ $offInbound = $al->applyGraphqlInboundRouteAllowlist('5550888', '', null, true);
 check($offInbound['listId'] === null, 'setInboundRouteAllowlist returns null listId when screening off');
 $offOutbound = $al->applyGraphqlOutboundRouteAllowlist(9, null, null, null, true);
 check($offOutbound['listId'] === null, 'setOutboundRouteAllowlist disable omits remove and store');
-check($al->applyGraphqlOutboundRouteAllowlist(9, null, null, '1', true) === false && $al->getLastError() === 'remove and store are required when enabling outbound auto-add.', 'setOutboundRouteAllowlist enable requires remove and store with exact error');
+$outboundEnableGuardMsg = 'remove and store are required when enabling outbound auto-add.';
+check($al->applyGraphqlOutboundRouteAllowlist(9, null, null, '1', true) === false && $al->getLastError() === $outboundEnableGuardMsg, 'setOutboundRouteAllowlist enable requires remove and store with exact error');
+check($al->applyGraphqlOutboundRouteAllowlist(9, 0, null, '1', true) === false && $al->getLastError() === $outboundEnableGuardMsg, 'outbound enable with remove-only rejects with exact error');
+check($al->applyGraphqlOutboundRouteAllowlist(9, null, 10, '1', true) === false && $al->getLastError() === $outboundEnableGuardMsg, 'outbound enable with store-only rejects with exact error');
 $fp->astman->db['/allowlist/autoadd/77'] = '1,0,99';
 $unit_core_routing_list = array();
 check($al->applyGraphqlOutboundRouteAllowlist(77, null, null, null, true) !== false && !isset($fp->astman->db['/allowlist/autoadd/77']), 'orphan outbound autoadd cleared without core route');
@@ -1319,6 +1362,28 @@ check(Allowlist::isLegacyDefaultListMemberKey('did/foo') === false, 'isLegacyDef
 $legacyKeyBody = allowlistUnitExtractFunctionBody($alSrc, 'isLegacyDefaultListMemberKey');
 check(strpos($legacyKeyBody, 'in_array($key, self::RESERVED_KEYS') !== false && strpos($legacyKeyBody, '[^\\/\\x00-\\x1F\\x7F]+') !== false, 'isLegacyDefaultListMemberKey pins reserved and slash guards');
 $unit_core_routing_list = array(array('route_id' => 9, 'name' => 'UnitRoute'));
+list($fpHarness, $alHarness) = fresh();
+$alHarness->listCreate('ClosureList');
+$gqlHarness = allowlistUnitGqlHarnessFresh($fpHarness, $alHarness);
+$closureAdd = allowlistUnitGqlRunMutation($gqlHarness, 'addAllowlist', array('number' => '2025558100', 'description' => 'closure'));
+check($closureAdd['ok'] && $alHarness->findListMember(1, '2025558100') !== null, 'GQL addAllowlist closure adds member');
+$closureRemove = allowlistUnitGqlRunMutation($gqlHarness, 'removeAllowlist', array('number' => '2025558100'));
+check($closureRemove['ok'] && $closureRemove['result']['id'] === '2025558100', 'GQL removeAllowlist closure returns plain deletedId');
+$closureAddList = allowlistUnitGqlRunMutation($gqlHarness, 'addAllowlistList', array('name' => 'FromClosure'));
+check($closureAddList['ok'] && $closureAddList['result']['name'] === 'FromClosure', 'GQL addAllowlistList closure returns created list');
+$closureListId = (int)$closureAddList['result']['id'];
+$closureRename = allowlistUnitGqlRunMutation($gqlHarness, 'renameAllowlistList', array('id' => (string)$closureListId, 'name' => 'RenamedClosure'));
+check($closureRename['ok'] && $closureRename['result']['name'] === 'RenamedClosure', 'GQL renameAllowlistList closure returns renamed list');
+$closureRemoveList = allowlistUnitGqlRunMutation($gqlHarness, 'removeAllowlistList', array('id' => (string)$closureListId));
+check($closureRemoveList['ok'] && $closureRemoveList['result']['id'] === Allowlist::formatGqlAllowlistListRelayGlobalId($closureListId), 'GQL removeAllowlistList closure returns Relay deletedId');
+$closureInbound = allowlistUnitGqlRunMutation($gqlHarness, 'setInboundRouteAllowlist', array('did' => '5550888', 'cid' => '', 'listId' => '1'));
+check($closureInbound['ok'] && $closureInbound['result']['listId'] === Allowlist::formatGqlAllowlistListRelayGlobalId(1), 'GQL setInboundRouteAllowlist closure returns listId payload');
+$closureOutboundOk = allowlistUnitGqlRunMutation($gqlHarness, 'setOutboundRouteAllowlist', array('routeId' => '9', 'listId' => '1', 'remove' => 0, 'store' => 10));
+check($closureOutboundOk['ok'] && isset($fpHarness->astman->db['/allowlist/autoadd/9']), 'GQL setOutboundRouteAllowlist closure enables auto-add');
+$closureOutboundGuard = allowlistUnitGqlRunMutation($gqlHarness, 'setOutboundRouteAllowlist', array('routeId' => '9', 'listId' => '1', 'remove' => 0, 'store' => null));
+check(!$closureOutboundGuard['ok'] && $closureOutboundGuard['error'] === $outboundEnableGuardMsg, 'GQL setOutboundRouteAllowlist closure pins outbound enable guard message');
+$closureBadAdd = allowlistUnitGqlRunMutation($gqlHarness, 'addAllowlist', array('number' => 'x', 'description' => 'bad'));
+check(!$closureBadAdd['ok'], 'GQL addAllowlist closure failure throws UserError not success');
 $fp->astman->db['/allowlist/sipuser'] = 'legacy label';
 $legacyLocalId = Allowlist::formatGqlAllowlistNodeLocalId(1, 'sipuser');
 check($legacyLocalId === 'sipuser', 'legacy list-1 member keeps bare local node id');

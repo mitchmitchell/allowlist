@@ -26,20 +26,6 @@ class Allowlist extends Base {
 		return $id;
 	}
 
-	/**
-	 * @return int|null
-	 */
-	private function resolveRouteListIdArg($raw)
-	{
-		$allowlist = $this->freepbx->Allowlist;
-		$listId = $allowlist->resolveGraphqlRouteListIdArg($raw);
-		if ($listId === false)
-		{
-			throw new UserError($allowlist->getLastError());
-		}
-		return $listId;
-	}
-
 	private function memberRowsForGraphql($listId)
 	{
 		$rows = $this->freepbx->Allowlist->listMemberGetAll($listId);
@@ -48,6 +34,106 @@ class Allowlist extends Base {
 			$rows[$i]['listId'] = $listId;
 		}
 		return $rows;
+	}
+
+	public function gqlMutateAddAllowlist(array $input)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		$row = $allowlist->applyGraphqlAddAllowlistMember(
+			isset($input['listId']) ? $input['listId'] : null,
+			isset($input['number']) ? $input['number'] : null,
+			isset($input['description']) ? $input['description'] : null
+		);
+		if ($row === false)
+		{
+			throw new UserError($allowlist->getLastError());
+		}
+		return $row;
+	}
+
+	public function gqlMutateRemoveAllowlist(array $input)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		$payload = $allowlist->applyGraphqlRemoveAllowlistMember(
+			isset($input['listId']) ? $input['listId'] : null,
+			isset($input['number']) ? $input['number'] : null
+		);
+		if ($payload === false)
+		{
+			throw new UserError($allowlist->getLastError());
+		}
+		return $payload;
+	}
+
+	public function gqlMutateAddAllowlistList(array $input)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		$row = $allowlist->applyGraphqlCreateAllowlistList(isset($input['name']) ? $input['name'] : '');
+		if ($row === false)
+		{
+			throw new UserError($allowlist->getLastError());
+		}
+		return $row;
+	}
+
+	public function gqlMutateRenameAllowlistList(array $input)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		$row = $allowlist->applyGraphqlRenameAllowlistList(
+			isset($input['id']) ? $input['id'] : null,
+			isset($input['name']) ? $input['name'] : ''
+		);
+		if ($row === false)
+		{
+			throw new UserError($allowlist->getLastError());
+		}
+		return $row;
+	}
+
+	public function gqlMutateRemoveAllowlistList(array $input)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		$payload = $allowlist->applyGraphqlRemoveAllowlistList(isset($input['id']) ? $input['id'] : null);
+		if ($payload === false)
+		{
+			throw new UserError($allowlist->getLastError());
+		}
+		return $payload;
+	}
+
+	public function gqlMutateSetInboundRouteAllowlist(array $input)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		$did = isset($input['did']) ? (string)$input['did'] : '';
+		$cid = isset($input['cid']) ? (string)$input['cid'] : '';
+		$listIdProvided = array_key_exists('listId', $input);
+		$listIdRaw = $listIdProvided ? $input['listId'] : null;
+		$result = $allowlist->applyGraphqlInboundRouteAllowlist($did, $cid, $listIdRaw, $listIdProvided);
+		if ($result === false)
+		{
+			throw new UserError($allowlist->getLastError());
+		}
+		return array(
+			'listId' => $result['listId'],
+		);
+	}
+
+	public function gqlMutateSetOutboundRouteAllowlist(array $input)
+	{
+		$allowlist = $this->freepbx->Allowlist;
+		$routeId = isset($input['routeId']) ? $input['routeId'] : null;
+		$remove = isset($input['remove']) ? $input['remove'] : null;
+		$store = isset($input['store']) ? $input['store'] : null;
+		$listIdProvided = array_key_exists('listId', $input);
+		$listIdRaw = $listIdProvided ? $input['listId'] : null;
+		$result = $allowlist->applyGraphqlOutboundRouteAllowlist($routeId, $remove, $store, $listIdRaw, $listIdProvided);
+		if ($result === false)
+		{
+			throw new UserError($allowlist->getLastError());
+		}
+		return array(
+			'listId' => $result['listId'],
+		);
 	}
 
 	public function mutationCallback() {
@@ -80,16 +166,7 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$allowlist = $this->freepbx->Allowlist;
-							$row = $allowlist->applyGraphqlAddAllowlistMember(
-								isset($input['listId']) ? $input['listId'] : null,
-								isset($input['number']) ? $input['number'] : null,
-								isset($input['description']) ? $input['description'] : null
-							);
-							if ($row === false) {
-								throw new UserError($allowlist->getLastError());
-							}
-							return $row;
+							return $this->gqlMutateAddAllowlist($input);
 						}
 					]),
 					'removeAllowlist' => Relay::mutationWithClientMutationId([
@@ -114,15 +191,7 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$allowlist = $this->freepbx->Allowlist;
-							$payload = $allowlist->applyGraphqlRemoveAllowlistMember(
-								isset($input['listId']) ? $input['listId'] : null,
-								isset($input['number']) ? $input['number'] : null
-							);
-							if ($payload === false) {
-								throw new UserError($allowlist->getLastError());
-							}
-							return $payload;
+							return $this->gqlMutateRemoveAllowlist($input);
 						}
 					]),
 					'addAllowlistList' => Relay::mutationWithClientMutationId([
@@ -143,12 +212,7 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$allowlist = $this->freepbx->Allowlist;
-							$row = $allowlist->applyGraphqlCreateAllowlistList(isset($input['name']) ? $input['name'] : '');
-							if ($row === false) {
-								throw new UserError($allowlist->getLastError());
-							}
-							return $row;
+							return $this->gqlMutateAddAllowlistList($input);
 						}
 					]),
 					'renameAllowlistList' => Relay::mutationWithClientMutationId([
@@ -173,15 +237,7 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$allowlist = $this->freepbx->Allowlist;
-							$row = $allowlist->applyGraphqlRenameAllowlistList(
-								isset($input['id']) ? $input['id'] : null,
-								isset($input['name']) ? $input['name'] : ''
-							);
-							if ($row === false) {
-								throw new UserError($allowlist->getLastError());
-							}
-							return $row;
+							return $this->gqlMutateRenameAllowlistList($input);
 						}
 					]),
 					'removeAllowlistList' => Relay::mutationWithClientMutationId([
@@ -202,12 +258,7 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$allowlist = $this->freepbx->Allowlist;
-							$payload = $allowlist->applyGraphqlRemoveAllowlistList(isset($input['id']) ? $input['id'] : null);
-							if ($payload === false) {
-								throw new UserError($allowlist->getLastError());
-							}
-							return $payload;
+							return $this->gqlMutateRemoveAllowlistList($input);
 						}
 					]),
 					'setInboundRouteAllowlist' => Relay::mutationWithClientMutationId([
@@ -237,19 +288,7 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$allowlist = $this->freepbx->Allowlist;
-							$did = isset($input['did']) ? (string)$input['did'] : '';
-							$cid = isset($input['cid']) ? (string)$input['cid'] : '';
-							$listIdProvided = array_key_exists('listId', $input);
-							$listIdRaw = $listIdProvided ? $input['listId'] : null;
-							$result = $allowlist->applyGraphqlInboundRouteAllowlist($did, $cid, $listIdRaw, $listIdProvided);
-							if ($result === false)
-							{
-								throw new UserError($allowlist->getLastError());
-							}
-							return [
-								'listId' => $result['listId'],
-							];
+							return $this->gqlMutateSetInboundRouteAllowlist($input);
 						}
 					]),
 					'setOutboundRouteAllowlist' => Relay::mutationWithClientMutationId([
@@ -283,20 +322,7 @@ class Allowlist extends Base {
 							]
 						],
 						'mutateAndGetPayload' => function ($input) {
-							$allowlist = $this->freepbx->Allowlist;
-							$routeId = isset($input['routeId']) ? $input['routeId'] : null;
-							$remove = isset($input['remove']) ? $input['remove'] : null;
-							$store = isset($input['store']) ? $input['store'] : null;
-							$listIdProvided = array_key_exists('listId', $input);
-							$listIdRaw = $listIdProvided ? $input['listId'] : null;
-							$result = $allowlist->applyGraphqlOutboundRouteAllowlist($routeId, $remove, $store, $listIdRaw, $listIdProvided);
-							if ($result === false)
-							{
-								throw new UserError($allowlist->getLastError());
-							}
-							return [
-								'listId' => $result['listId'],
-							];
+							return $this->gqlMutateSetOutboundRouteAllowlist($input);
 						}
 					])
 				];

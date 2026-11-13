@@ -660,21 +660,6 @@ class Allowlist implements BMO
         return $payload === null ? false : $payload;
     }
 
-    const GQL_ALLOWLIST_ENTRY_RELAY_TYPE = 'allowlist';
-
-    /**
-     * @return string|false
-     */
-    public static function formatGqlAllowlistEntryRelayGlobalId($listId, $number)
-    {
-        $localId = self::formatGqlAllowlistNodeLocalId($listId, $number);
-        if ($localId === false)
-        {
-            return false;
-        }
-        return base64_encode(self::GQL_ALLOWLIST_ENTRY_RELAY_TYPE . ':' . $localId);
-    }
-
     /**
      * @return array{number:string,description:string,listId:int}|false
      */
@@ -713,14 +698,26 @@ class Allowlist implements BMO
         {
             return false;
         }
-        if (!$this->listMemberDel($listId, $number))
+        $entry = $this->checkEntry(array('number' => $number));
+        if ($entry === false)
         {
             return false;
         }
-        $deletedId = self::formatGqlAllowlistEntryRelayGlobalId($listId, $number);
-        if ($deletedId === false)
+        if ($listId === self::DEFAULT_LIST_ID)
+        {
+            $deletedId = is_scalar($number) ? (string)$number : '';
+        }
+        else
+        {
+            $deletedId = self::formatGqlAllowlistNodeLocalId($listId, $entry['number']);
+        }
+        if ($deletedId === false || $deletedId === '')
         {
             $this->lastError = _('Could not format the removed allowlist entry id.');
+            return false;
+        }
+        if (!$this->listMemberDel($listId, $entry['number']))
+        {
             return false;
         }
         return array('id' => $deletedId);
