@@ -22,6 +22,31 @@ function allowlistUnitDeleteListForHook($al, $listId) {
 	$al->testBeforeListMutationLockAcquire = null;
 	$al->listDelete($listId);
 }
+function allowlistUnitFunctionBodyContains($src, $funcName, $needle) {
+	if (!preg_match('/function\s+' . preg_quote($funcName, '/') . '\s*\(/', $src, $m, PREG_OFFSET_CAPTURE)) {
+		return false;
+	}
+	$start = $m[0][1];
+	$open = strpos($src, '{', $start);
+	if ($open === false) {
+		return false;
+	}
+	$depth = 0;
+	$len = strlen($src);
+	for ($i = $open; $i < $len; $i++) {
+		$ch = $src[$i];
+		if ($ch === '{') {
+			$depth++;
+		} elseif ($ch === '}') {
+			$depth--;
+			if ($depth === 0) {
+				$body = substr($src, $open, $i - $open + 1);
+				return strpos($body, $needle) !== false;
+			}
+		}
+	}
+	return false;
+}
 function allowlistUnitUnlinkIfExists($path) {
 	if (is_string($path) && $path !== '' && (is_file($path) || is_link($path))) {
 		unlink($path);
@@ -155,6 +180,16 @@ check(strpos($gql, 'allowlistLists') !== false && strpos($gql, 'setInboundRouteA
 check(preg_match('/checkAllWriteScope\(\)\)[\s\S]*addAllowlistList/', $gql) === 1, 'list/route GraphQL mutations sit behind checkAllWriteScope');
 check(preg_match('/checkAllReadScope\(\)\)[\s\S]*allowlistLists/', $gql) === 1, 'allowlistLists sits behind checkAllReadScope');
 check(substr_count($gql, "'addAllowlistList' =>") === 1, 'addAllowlistList defined once (write scope gate)');
+$alSrc = file_get_contents($root . '/Allowlist.class.php');
+check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlListIdArg', 'listExists($id)'), 'resolveGraphqlListIdArg enforces listExists');
+check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlRouteListIdArg', 'listExists($id)'), 'resolveGraphqlRouteListIdArg enforces listExists');
+check(preg_match("/'setInboundRouteAllowlist'\s*=>[\s\S]*?inboundRouteExistsInCore\(/", $gql) === 1, 'setInboundRouteAllowlist requires inbound route in core');
+preg_match('/function queryCallback\(\)[\s\S]*?function initializeTypes/s', $gql, $gqlQueryBlock);
+$gqlQuerySection = $gqlQueryBlock[0] ?? '';
+check(strpos($gqlQuerySection, "'addAllowlistList'") === false && strpos($gqlQuerySection, "'setOutboundRouteAllowlist'") === false, 'write mutations not in queryCallback');
+foreach (array('addAllowlistList', 'renameAllowlistList', 'removeAllowlistList', 'setInboundRouteAllowlist', 'setOutboundRouteAllowlist') as $gqlWriteMut) {
+	check(preg_match('/function mutationCallback\(\)[\s\S]*checkAllWriteScope\(\)\)[\s\S]*\'' . $gqlWriteMut . '\'\s*=>/', $gql) === 1, $gqlWriteMut . ' registered only under checkAllWriteScope');
+}
 
 // ---- A5: destination registry (SEC-06)
 list($fp, $al) = fresh();
@@ -1023,7 +1058,20 @@ $done = allowlistMemberPut($putAgi, 2, '2025550400', 'automatically added');
 check($done['result'] === 1 && $putAgi->puts[0][0] === 'allowlist-list' && $putAgi->puts[0][1] === '2/2025550400', 'autoadd member put uses allowlist-list for named lists');
 unset($allowlist_test_audit_logs);
 
-// --- GraphQL multi-list helpers (PR-C) -------------------------------------
+if (!function_exists('core_did_list')) {
+	function core_did_list() {
+		global $unit_core_did_list;
+		return $unit_core_did_list;
+	}
+	function core_routing_list() {
+		return array();
+	}
+	function empty_freepbx($x) {
+		return empty($x);
+	}
+}
+global $unit_core_did_list;
+$unit_core_did_list = array(array('extension' => '5550888', 'cidnum' => '', 'pricid' => false));
 check(Allowlist::formatGqlAllowlistNodeLocalId(1, '2025550998') === '2025550998', 'GQL default-list node id is bare number');
 check(Allowlist::formatGqlAllowlistNodeLocalId(2, '2025550999') === '2:2025550999', 'GQL named-list node id is listId:number');
 check(Allowlist::parseGqlAllowlistNodeLocalId('2:2025550999') === array('listId' => 2, 'number' => '2025550999'), 'GQL parse named-list node id');
@@ -1060,6 +1108,29 @@ foreach ($sums as $sumRow) {
 	}
 }
 check($defaultRow !== null && $defaultRow['name'] === 'Default', 'summarizeAllowlistsForGraphql includes default list');
+$listRelayGlobal = Allowlist::formatGqlAllowlistListRelayGlobalId(2);
+check($listRelayGlobal !== false && Allowlist::parseGqlAllowlistListIdInput($listRelayGlobal) === 2, 'parseGqlAllowlistListIdInput decodes allowlistList global id');
+check($al->resolveGraphqlListIdArg($listRelayGlobal) === 2 && $al->resolveGraphqlListIdArg('2') === 2, 'resolveGraphqlListIdArg accepts global and raw list id');
+check($al->resolveGraphqlRouteListIdArg($listRelayGlobal) === 2, 'resolveGraphqlRouteListIdArg accepts global list id');
+$wrongRelayListType = base64_encode('allowlist:2025550111');
+check($al->resolveGraphqlListIdArg($wrongRelayListType) === false, 'resolveGraphqlListIdArg rejects wrong Relay type');
+$ghostListGlobal = Allowlist::formatGqlAllowlistListRelayGlobalId(99);
+check($al->resolveGraphqlListIdArg($ghostListGlobal) === false, 'resolveGraphqlListIdArg rejects nonexistent list global id');
+check($al->resolveGraphqlRouteListIdArg($ghostListGlobal) === false, 'resolveGraphqlRouteListIdArg rejects nonexistent list global id');
+check($al->inboundRouteExistsInCore('5550000', '') === false, 'inboundRouteExistsInCore rejects unknown DID');
+check($al->listMemberAdd($al->resolveGraphqlListIdArg($listRelayGlobal), array('number' => '2025550880')) === true, 'addAllowlist listId round-trip accepts allowlistList global id');
+check($al->findAllowlistListSummaryById('2') !== null && $al->findAllowlistListSummaryById('2')['id'] === 2, 'allowlistList node lookup by local id');
+$al->listMemberDel($al->resolveGraphqlListIdArg($listRelayGlobal), '2025550880');
+check($al->findListMember(2, '2025550880') === null, 'removeAllowlist listId round-trip via global id');
+check(is_array($al->listMemberGetAll($al->resolveGraphqlListIdArg($listRelayGlobal))), 'allAllowlists listId arg accepts allowlistList global id');
+check($al->listRename($al->resolveGraphqlListIdArg($listRelayGlobal), 'RelayRename') === true, 'renameAllowlistList id accepts global id');
+check($al->didAdd('5550888', '', $al->resolveGraphqlRouteListIdArg($listRelayGlobal)) === true, 'setInboundRouteAllowlist listId accepts global id');
+check($al->routeAdd(9, 0, 10, $al->resolveGraphqlRouteListIdArg($listRelayGlobal)) === true, 'setOutboundRouteAllowlist listId accepts global id');
+$al->didDelete('5550888', '');
+$al->didDelete('5550777', '');
+$al->routeDelete(9);
+$al->listMemberDel(2, '2025550777');
+check($al->listDelete($al->resolveGraphqlListIdArg($listRelayGlobal)) === true, 'removeAllowlistList id accepts global id');
 
 if (!function_exists('core_did_list')) {
 	function core_did_list() {

@@ -296,6 +296,118 @@ class Allowlist implements BMO
         return array('listId' => $listId, 'number' => $n);
     }
 
+    const GQL_ALLOWLIST_LIST_RELAY_TYPE = 'allowlistList';
+
+    /**
+     * @return string|false Base64 Relay global id for an allowlistList node
+     */
+    public static function formatGqlAllowlistListRelayGlobalId($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            return false;
+        }
+        return base64_encode(self::GQL_ALLOWLIST_LIST_RELAY_TYPE . ':' . $id);
+    }
+
+    /**
+     * @return int|false Parsed list id from raw id or allowlistList Relay global id
+     */
+    public static function parseGqlAllowlistListIdInput($raw)
+    {
+        if (!is_scalar($raw))
+        {
+            return false;
+        }
+        $s = (string)$raw;
+        if ($s === '')
+        {
+            return false;
+        }
+        $parsed = self::parseListIdValue($s);
+        if ($parsed !== false)
+        {
+            return $parsed;
+        }
+        $decoded = base64_decode($s, true);
+        if ($decoded === false || strpos($decoded, ':') === false)
+        {
+            return false;
+        }
+        $colon = strpos($decoded, ':');
+        $typeName = substr($decoded, 0, $colon);
+        $localId = substr($decoded, $colon + 1);
+        if ($typeName !== self::GQL_ALLOWLIST_LIST_RELAY_TYPE)
+        {
+            return false;
+        }
+        return self::parseListIdValue($localId);
+    }
+
+    /**
+     * @return int|false
+     */
+    public function resolveGraphqlListIdArg($raw, $required = false)
+    {
+        $this->lastError = '';
+        if ($raw === null || $raw === '')
+        {
+            if ($required)
+            {
+                $this->lastError = _('Unknown allowlist.');
+                return false;
+            }
+            return self::DEFAULT_LIST_ID;
+        }
+        $id = self::parseGqlAllowlistListIdInput($raw);
+        if ($id === false || !$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        return $id;
+    }
+
+    /**
+     * @return int|null|false null clears route assignment; false is an error
+     */
+    public function resolveGraphqlRouteListIdArg($raw)
+    {
+        $this->lastError = '';
+        if ($raw === null || $raw === '')
+        {
+            return null;
+        }
+        $id = self::parseGqlAllowlistListIdInput($raw);
+        if ($id === false || !$this->listExists($id))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        return $id;
+    }
+
+    /**
+     * @return array{id:int,name:string,memberCount:int,inboundRoutes:array,outboundRoutes:array}|null
+     */
+    public function findAllowlistListSummaryById($listId)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false || !$this->listExists($id))
+        {
+            return null;
+        }
+        foreach ($this->summarizeAllowlistsForGraphql() as $row)
+        {
+            if ((int)$row['id'] === (int)$id)
+            {
+                return $row;
+            }
+        }
+        return null;
+    }
+
     /**
      * @param  array $item Row from core_did_list()
      */

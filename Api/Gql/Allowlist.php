@@ -18,18 +18,10 @@ class Allowlist extends Base {
 	private function resolveMemberListIdArg($raw, $required = false)
 	{
 		$allowlist = $this->freepbx->Allowlist;
-		if ($raw === null || $raw === '')
+		$id = $allowlist->resolveGraphqlListIdArg($raw, $required);
+		if ($id === false)
 		{
-			if ($required)
-			{
-				throw new UserError(_('Unknown allowlist.'));
-			}
-			return AllowlistModule::DEFAULT_LIST_ID;
-		}
-		$id = AllowlistModule::parseListIdValue($raw);
-		if ($id === false || !$allowlist->listExists($id))
-		{
-			throw new UserError(_('Unknown allowlist.'));
+			throw new UserError($allowlist->getLastError());
 		}
 		return $id;
 	}
@@ -39,17 +31,13 @@ class Allowlist extends Base {
 	 */
 	private function resolveRouteListIdArg($raw)
 	{
-		if ($raw === null || $raw === '')
-		{
-			return null;
-		}
 		$allowlist = $this->freepbx->Allowlist;
-		$id = AllowlistModule::parseListIdValue($raw);
-		if ($id === false || !$allowlist->listExists($id))
+		$listId = $allowlist->resolveGraphqlRouteListIdArg($raw);
+		if ($listId === false)
 		{
-			throw new UserError(_('Unknown allowlist.'));
+			throw new UserError($allowlist->getLastError());
 		}
-		return $id;
+		return $listId;
 	}
 
 	private function memberRowsForGraphql($listId)
@@ -449,6 +437,12 @@ class Allowlist extends Base {
 
 		$listType = $this->typeContainer->create('allowlistList', 'object');
 		$listType->setDescription(_('An allowlist (default or named)'));
+		$listType->addInterfaceCallback(function() {
+			return [$this->getNodeDefinition()['nodeInterface']];
+		});
+		$listType->setGetNodeCallback(function ($id) {
+			return $this->freepbx->Allowlist->findAllowlistListSummaryById($id);
+		});
 		$listType->addFieldCallback(function() {
 			return [
 				'id' => Relay::globalIdField('allowlistList', function ($row) {
