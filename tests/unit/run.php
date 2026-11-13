@@ -136,9 +136,13 @@ function allowlistUnitNormalizePhpSnippet($snippet) {
  */
 function allowlistUnitGqlInvokeExtractor($gqlHarness, $method, array $input) {
 	try {
-		$result = $gqlHarness->$method($input);
+		$ref = new ReflectionMethod($gqlHarness, $method);
+		$ref->setAccessible(true);
+		$result = $ref->invoke($gqlHarness, $input);
 		return array('ok' => true, 'result' => $result, 'error' => '');
 	} catch (\GraphQL\Error\UserError $e) {
+		return array('ok' => false, 'result' => null, 'error' => $e->getMessage());
+	} catch (\ReflectionException $e) {
 		return array('ok' => false, 'result' => null, 'error' => $e->getMessage());
 	}
 }
@@ -329,6 +333,7 @@ check(strpos($inApplyBody, 'validDidCid') !== false && strpos($inApplyBody, 'val
 check(strpos($outApplyBody, 'preg_match') !== false && strpos($outApplyBody, 'preg_match') < strpos($outApplyBody, 'listIdRaw === null'), 'applyGraphqlOutboundRouteAllowlist validates routeId before clear');
 check(strpos($inApplyBody, 'if (!$this->didAdd') !== false, 'applyGraphqlInboundRouteAllowlist checks didAdd result');
 check(strpos($outApplyBody, 'if (!$this->routeAdd') !== false, 'applyGraphqlOutboundRouteAllowlist checks routeAdd result');
+check(strpos($gql, 'protected function gqlMutateAddAllowlist') !== false, 'gqlMutateAddAllowlist is protected extractor');
 check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateAddAllowlist', 'applyGraphqlAddAllowlistMember'), 'gqlMutateAddAllowlist wraps applyGraphqlAddAllowlistMember');
 check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateRemoveAllowlist', 'applyGraphqlRemoveAllowlistMember'), 'gqlMutateRemoveAllowlist wraps applyGraphqlRemoveAllowlistMember');
 check(allowlistUnitFunctionBodyContains($gql, 'gqlMutateAddAllowlistList', 'applyGraphqlCreateAllowlistList'), 'gqlMutateAddAllowlistList wraps applyGraphqlCreateAllowlistList');
@@ -1291,7 +1296,7 @@ check($al->applyGraphqlRemoveAllowlistMember(null, '2025559999888') === false, '
 check($al->applyGraphqlRemoveAllowlistMember('2', '2025557777001') === false && $al->findListMember(2, '2025554444') !== null, 'applyGraphqlRemoveAllowlistMember list 2 rejects missing member');
 $fp->astman->db['/allowlist/2025550100'] = 'ws-pad-target';
 $spacePadInput = ' 2025550100';
-check($al->applyGraphqlRemoveAllowlistMember(null, $spacePadInput) === false && isset($fp->astman->db['/allowlist/2025550100']), 'applyGraphqlRemoveAllowlistMember list 1 rejects whitespace-padded input');
+check($al->applyGraphqlRemoveAllowlistMember(null, $spacePadInput) === false && isset($fp->astman->db['/allowlist/2025550100']) && $al->getLastError() === _('Not an allowlist number.'), 'applyGraphqlRemoveAllowlistMember list 1 rejects whitespace-padded input with numberDel error');
 $removedList2 = $al->applyGraphqlRemoveAllowlistMember('2', '2025554555');
 check($removedList2 !== false && $removedList2['id'] === '2:2025554555' && $al->findListMember(2, '2025554555') === null && $al->findListMember(2, '2025554444') !== null, 'applyGraphqlRemoveAllowlistMember list 2 returns composite deletedId');
 check($al->applyGraphqlAddAllowlistMember('2', 'bad', 'x') === false && $al->findListMember(2, 'bad') === null, 'applyGraphqlAddAllowlistMember failure does not leave a member');
@@ -1494,6 +1499,49 @@ $countList2 = count($alHarness->listMemberGetAll(2));
 check($countList2 !== $countList1, 'harness list 1 and list 2 have distinct member counts');
 check((int)$connList2['allowlistQueryListId'] === 2, 'allAllowlists sets allowlistQueryListId on connection');
 check($gqlHarness->invokeAllAllowlistsTotalCount(array('listId' => '2')) === $countList2, 'allAllowlists totalCount matches list 2 member count');
+$memberRowL2 = $alHarness->findListMember(2, '2025558600');
+$memberRowL2['listId'] = 2;
+$memberFieldsL2 = $gqlHarness->resolveTypeFields('allowlist', $memberRowL2);
+check(\GraphQLRelay\Relay::fromGlobalId($memberFieldsL2['id'])['id'] === '2:2025558600', 'allowlist id field resolver emits listId:number local id');
+foreach ($connList2['edges'] as $edgeL2) {
+	$edgeFields = $gqlHarness->resolveTypeFields('allowlist', $edgeL2['node']);
+	$edgeLocal = \GraphQLRelay\Relay::fromGlobalId($edgeFields['id']);
+	$roundNode = $gqlHarness->invokeAllowlistGetNode($edgeLocal['id']);
+	check($roundNode !== null && $roundNode['number'] === $edgeL2['node']['number'], 'allAllowlists list-2 edge global id round-trips through getNode');
+}
+$fpHarness->astman->db['/allowlist-lists/2'] = '<b>Esc</b>';
+$list2SummaryField = $alHarness->findAllowlistListSummaryById('2');
+$listFieldsHarness = $gqlHarness->resolveTypeFields('allowlistList', $list2SummaryField);
+check($listFieldsHarness['name'] === '&lt;b&gt;Esc&lt;/b&gt;', 'allowlistList name field html-escapes display name');
+check((int)$listFieldsHarness['memberCount'] === $countList2, 'allowlistList memberCount field matches AstDB members');
+$alHarness->didAdd('5550990', '', 2);
+$unit_core_did_list = array(array('extension' => '5550990', 'cidnum' => '', 'pricid' => false));
+$list2SummaryField = $alHarness->findAllowlistListSummaryById('2');
+$listFieldsHarness = $gqlHarness->resolveTypeFields('allowlistList', $list2SummaryField);
+check(in_array('5550990', $listFieldsHarness['inboundRoutes'], true), 'allowlistList inboundRoutes field lists screening route');
+$unit_core_routing_list = array(
+	array('route_id' => 9, 'name' => 'UnitRoute'),
+	array('route_id' => 19, 'name' => 'GqlRead19'),
+);
+$alHarness->routeAdd(19, 0, 10, 2);
+$list2SummaryField = $alHarness->findAllowlistListSummaryById('2');
+$listFieldsHarness = $gqlHarness->resolveTypeFields('allowlistList', $list2SummaryField);
+check(in_array('19', $listFieldsHarness['outboundRoutes'], true), 'allowlistList outboundRoutes field lists auto-add route');
+$listsConn = $gqlQueries['allowlistLists'](null, array('first' => 50));
+$listSummaryNodes = array();
+foreach ($listsConn['edges'] as $listEdge) {
+	$listSummaryNodes[(int)$listEdge['node']['id']] = $listEdge['node'];
+}
+check(isset($listSummaryNodes[1]) && $listSummaryNodes[1]['name'] === 'Default', 'allowlistLists connection includes default list summary');
+check(isset($listSummaryNodes[2]), 'allowlistLists connection includes named list summary');
+$list2Resolved = $gqlHarness->resolveTypeFields('allowlistList', $listSummaryNodes[2]);
+check((int)$list2Resolved['memberCount'] === count($alHarness->listMemberGetAll(2)), 'allowlistLists row memberCount via field resolver');
+check(is_array($list2Resolved['inboundRoutes']) && in_array('5550990', $list2Resolved['inboundRoutes'], true), 'allowlistLists row inboundRoutes via field resolver');
+for ($pi = 0; $pi < 4; $pi++) {
+	$alHarness->listMemberAdd(2, array('number' => '202555879' . $pi, 'description' => 'pg'));
+}
+$connPage = $gqlQueries['allAllowlists'](null, array('listId' => '2', 'first' => 3));
+check(count($connPage['edges']) === 3 && !empty($connPage['pageInfo']['hasNextPage']), 'allAllowlists paginates with first and hasNextPage');
 $list2NodeRow = $gqlHarness->invokeAllowlistGetNode('2:2025558600');
 check($list2NodeRow !== null && (int)$list2NodeRow['listId'] === 2 && $list2NodeRow['number'] === '2025558600', 'allowlist getNode returns list-2 member with listId and number');
 $list1NodeRow = $gqlHarness->invokeAllowlistGetNode('sipuser');

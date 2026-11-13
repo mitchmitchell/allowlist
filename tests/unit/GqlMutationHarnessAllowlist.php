@@ -64,5 +64,11 @@ namespace FreePBX\modules\Allowlist\Api\Gql {
 			$this->initializeTypes();
 			return $this->typeContainer->get('allowlist')->resolveConnectionField('totalCount', $conn);
 		}
+
+		public function resolveTypeFields($typeName, array $row)
+		{
+			$this->initializeTypes();
+			return $this->typeContainer->get($typeName)->resolveFieldsForRow($row);
+		}
 	}
 }

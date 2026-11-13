@@ -32,6 +32,7 @@ namespace {
 		private $object;
 		private $getNodeCallback;
 		private $connectionFieldsCallback;
+		private $fieldCallbackFactories = array();
 		public function __construct($name)
 		{
 			$this->name = $name;
@@ -65,6 +66,24 @@ namespace {
 		}
 		public function addFieldCallback($cb)
 		{
+			$this->fieldCallbackFactories[] = $cb;
+		}
+		public function resolveFieldsForRow($row)
+		{
+			$out = array();
+			foreach ($this->fieldCallbackFactories as $fieldCb)
+			{
+				$fields = $fieldCb();
+				foreach ($fields as $fieldName => $def)
+				{
+					if (!is_array($def) || !isset($def['resolve']))
+					{
+						continue;
+					}
+					$out[$fieldName] = $def['resolve']($row, array());
+				}
+			}
+			return $out;
 		}
 		public function setConnectionResolveNode($cb)
 		{
@@ -102,9 +121,6 @@ namespace {
 		return new \FreePBX\modules\Allowlist\Api\Gql\AllowlistGqlMutationHarness($fp);
 	}
 
-	/**
-	 * @return array{ok:bool,result:mixed,error:string}
-	 */
 	/**
 	 * @return array{ok:bool,result:mixed,error:string}
 	 */
@@ -191,12 +207,25 @@ namespace GraphQLRelay {
 		}
 		public static function connectionFromArray($data, $args)
 		{
-			$edges = array();
-			foreach ($data as $row)
+			$total = count($data);
+			$first = isset($args['first']) ? (int)$args['first'] : $total;
+			if ($first < 0)
 			{
-				$edges[] = array('node' => $row);
+				$first = 0;
 			}
-			return array('edges' => $edges, 'allowlistQueryListId' => null);
+			$slice = $first === 0 ? array() : array_slice($data, 0, $first);
+			$edges = array();
+			foreach ($slice as $row)
+			{
+				$edges[] = array('node' => $row, 'cursor' => '');
+			}
+			return array(
+				'edges' => $edges,
+				'pageInfo' => array(
+					'hasNextPage' => $total > count($slice),
+					'hasPreviousPage' => false,
+				),
+			);
 		}
 		public static function fromGlobalId($id)
 		{
@@ -217,7 +246,13 @@ namespace GraphQLRelay {
 		}
 		public static function globalIdField($type, $cb)
 		{
-			return array();
+			return array(
+				'type' => 'ID',
+				'resolve' => function ($row) use ($type, $cb) {
+					$local = $cb($row);
+					return base64_encode($type . ':' . $local);
+				},
+			);
 		}
 	}
 }

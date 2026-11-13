@@ -36,7 +36,7 @@ class Allowlist extends Base {
 		return $rows;
 	}
 
-	public function gqlMutateAddAllowlist(array $input)
+	protected function gqlMutateAddAllowlist(array $input)
 	{
 		$allowlist = $this->freepbx->Allowlist;
 		$row = $allowlist->applyGraphqlAddAllowlistMember(
@@ -51,7 +51,7 @@ class Allowlist extends Base {
 		return $row;
 	}
 
-	public function gqlMutateRemoveAllowlist(array $input)
+	protected function gqlMutateRemoveAllowlist(array $input)
 	{
 		$allowlist = $this->freepbx->Allowlist;
 		$payload = $allowlist->applyGraphqlRemoveAllowlistMember(
@@ -65,7 +65,7 @@ class Allowlist extends Base {
 		return $payload;
 	}
 
-	public function gqlMutateAddAllowlistList(array $input)
+	protected function gqlMutateAddAllowlistList(array $input)
 	{
 		$allowlist = $this->freepbx->Allowlist;
 		$row = $allowlist->applyGraphqlCreateAllowlistList(isset($input['name']) ? $input['name'] : '');
@@ -76,7 +76,7 @@ class Allowlist extends Base {
 		return $row;
 	}
 
-	public function gqlMutateRenameAllowlistList(array $input)
+	protected function gqlMutateRenameAllowlistList(array $input)
 	{
 		$allowlist = $this->freepbx->Allowlist;
 		$row = $allowlist->applyGraphqlRenameAllowlistList(
@@ -90,7 +90,7 @@ class Allowlist extends Base {
 		return $row;
 	}
 
-	public function gqlMutateRemoveAllowlistList(array $input)
+	protected function gqlMutateRemoveAllowlistList(array $input)
 	{
 		$allowlist = $this->freepbx->Allowlist;
 		$payload = $allowlist->applyGraphqlRemoveAllowlistList(isset($input['id']) ? $input['id'] : null);
@@ -101,7 +101,7 @@ class Allowlist extends Base {
 		return $payload;
 	}
 
-	public function gqlMutateSetInboundRouteAllowlist(array $input)
+	protected function gqlMutateSetInboundRouteAllowlist(array $input)
 	{
 		$allowlist = $this->freepbx->Allowlist;
 		$did = isset($input['did']) ? (string)$input['did'] : '';
@@ -118,7 +118,7 @@ class Allowlist extends Base {
 		);
 	}
 
-	public function gqlMutateSetOutboundRouteAllowlist(array $input)
+	protected function gqlMutateSetOutboundRouteAllowlist(array $input)
 	{
 		$allowlist = $this->freepbx->Allowlist;
 		$routeId = isset($input['routeId']) ? $input['routeId'] : null;
