@@ -183,7 +183,11 @@ check(substr_count($gql, "'addAllowlistList' =>") === 1, 'addAllowlistList defin
 $alSrc = file_get_contents($root . '/Allowlist.class.php');
 check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlListIdArg', 'listExists($id)'), 'resolveGraphqlListIdArg enforces listExists');
 check(allowlistUnitFunctionBodyContains($alSrc, 'resolveGraphqlRouteListIdArg', 'listExists($id)'), 'resolveGraphqlRouteListIdArg enforces listExists');
-check(preg_match("/'setInboundRouteAllowlist'\s*=>[\s\S]*?inboundRouteExistsInCore\(/", $gql) === 1, 'setInboundRouteAllowlist requires inbound route in core');
+check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlInboundRouteAllowlist', 'inboundRouteExistsInCore'), 'applyGraphqlInboundRouteAllowlist requires inbound route in core');
+check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlOutboundRouteAllowlist', 'outboundRouteExistsInCore'), 'applyGraphqlOutboundRouteAllowlist requires outbound route in core');
+check(strpos($gql, "array_key_exists('listId', \$input)") !== false, 'route setters require listId key in GraphQL input');
+check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlInboundRouteAllowlist', 'signalRouteScreeningDialplanReload'), 'inbound GraphQL route assign signals dialplan reload');
+check(allowlistUnitFunctionBodyContains($alSrc, 'applyGraphqlOutboundRouteAllowlist', 'signalRouteScreeningDialplanReload'), 'outbound GraphQL route assign signals dialplan reload');
 preg_match('/function queryCallback\(\)[\s\S]*?function initializeTypes/s', $gql, $gqlQueryBlock);
 $gqlQuerySection = $gqlQueryBlock[0] ?? '';
 check(strpos($gqlQuerySection, "'addAllowlistList'") === false && strpos($gqlQuerySection, "'setOutboundRouteAllowlist'") === false, 'write mutations not in queryCallback');
@@ -1064,14 +1068,23 @@ if (!function_exists('core_did_list')) {
 		return $unit_core_did_list;
 	}
 	function core_routing_list() {
-		return array();
+		global $unit_core_routing_list;
+		return $unit_core_routing_list;
 	}
 	function empty_freepbx($x) {
 		return empty($x);
 	}
 }
-global $unit_core_did_list;
+if (!function_exists('needreload')) {
+	function needreload() {
+		global $unit_needreload_count;
+		$unit_needreload_count++;
+	}
+}
+global $unit_core_did_list, $unit_core_routing_list, $unit_needreload_count;
 $unit_core_did_list = array(array('extension' => '5550888', 'cidnum' => '', 'pricid' => false));
+$unit_core_routing_list = array(array('route_id' => 9, 'name' => 'UnitRoute'));
+$unit_needreload_count = 0;
 check(Allowlist::formatGqlAllowlistNodeLocalId(1, '2025550998') === '2025550998', 'GQL default-list node id is bare number');
 check(Allowlist::formatGqlAllowlistNodeLocalId(2, '2025550999') === '2:2025550999', 'GQL named-list node id is listId:number');
 check(Allowlist::parseGqlAllowlistNodeLocalId('2:2025550999') === array('listId' => 2, 'number' => '2025550999'), 'GQL parse named-list node id');
@@ -1118,6 +1131,16 @@ $ghostListGlobal = Allowlist::formatGqlAllowlistListRelayGlobalId(99);
 check($al->resolveGraphqlListIdArg($ghostListGlobal) === false, 'resolveGraphqlListIdArg rejects nonexistent list global id');
 check($al->resolveGraphqlRouteListIdArg($ghostListGlobal) === false, 'resolveGraphqlRouteListIdArg rejects nonexistent list global id');
 check($al->inboundRouteExistsInCore('5550000', '') === false, 'inboundRouteExistsInCore rejects unknown DID');
+check($al->outboundRouteExistsInCore(9) === true && $al->outboundRouteExistsInCore(77) === false, 'outboundRouteExistsInCore honors core_routing_list');
+check($al->applyGraphqlInboundRouteAllowlist('5550888', '', null, false) === false, 'omitted inbound listId does not clear screening');
+check($al->applyGraphqlOutboundRouteAllowlist(9, 0, 10, null, false) === false, 'omitted outbound listId does not clear auto-add');
+$unit_needreload_count = 0;
+$applied = $al->applyGraphqlInboundRouteAllowlist('5550888', '', '1', true);
+check($applied !== false && $unit_needreload_count === 1 && isset($fp->astman->db['/allowlist/did/5550888']), 'applyGraphqlInboundRouteAllowlist calls needreload');
+$unit_needreload_count = 0;
+check($al->applyGraphqlOutboundRouteAllowlist(77, 0, 10, '1', true) === false && $unit_needreload_count === 0, 'unknown outbound route rejects without needreload');
+$unit_needreload_count = 0;
+check($al->applyGraphqlOutboundRouteAllowlist(9, 0, 10, '1', true) !== false && $unit_needreload_count === 1, 'applyGraphqlOutboundRouteAllowlist calls needreload');
 check($al->listMemberAdd($al->resolveGraphqlListIdArg($listRelayGlobal), array('number' => '2025550880')) === true, 'addAllowlist listId round-trip accepts allowlistList global id');
 check($al->findAllowlistListSummaryById('2') !== null && $al->findAllowlistListSummaryById('2')['id'] === 2, 'allowlistList node lookup by local id');
 $al->listMemberDel($al->resolveGraphqlListIdArg($listRelayGlobal), '2025550880');
@@ -1131,6 +1154,7 @@ $al->didDelete('5550777', '');
 $al->routeDelete(9);
 $al->listMemberDel(2, '2025550777');
 check($al->listDelete($al->resolveGraphqlListIdArg($listRelayGlobal)) === true, 'removeAllowlistList id accepts global id');
+$unit_core_routing_list = array();
 
 if (!function_exists('core_did_list')) {
 	function core_did_list() {

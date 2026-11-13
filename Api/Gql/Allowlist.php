@@ -240,7 +240,7 @@ class Allowlist extends Base {
 							],
 							'listId' => [
 								'type' => Type::id(),
-								'description' => _('Allowlist id, or omit/null to turn screening off')
+								'description' => _('Allowlist id, or null to turn screening off')
 							]
 						],
 						'outputFields' => [
@@ -256,30 +256,16 @@ class Allowlist extends Base {
 							$allowlist = $this->freepbx->Allowlist;
 							$did = isset($input['did']) ? (string)$input['did'] : '';
 							$cid = isset($input['cid']) ? (string)$input['cid'] : '';
-							if (!AllowlistModule::validDidCid($did, $cid))
-							{
-								throw new UserError(_('DID and caller ID may only contain digits, + and dial-pattern characters.'));
-							}
-							if (!$allowlist->inboundRouteExistsInCore($did, $cid))
-							{
-								throw new UserError(_('Inbound route not found.'));
-							}
-							$listId = $this->resolveRouteListIdArg(array_key_exists('listId', $input) ? $input['listId'] : null);
-							if ($listId === null)
-							{
-								if (!$allowlist->didDelete($did, $cid))
-								{
-									throw new UserError($allowlist->getLastError());
-								}
-								$allowlist->logGraphqlInboundRouteAllowlistChange($did, $cid, null);
-								return ['listId' => null];
-							}
-							if (!$allowlist->didAdd($did, $cid, $listId))
+							$listIdProvided = array_key_exists('listId', $input);
+							$listIdRaw = $listIdProvided ? $input['listId'] : null;
+							$result = $allowlist->applyGraphqlInboundRouteAllowlist($did, $cid, $listIdRaw, $listIdProvided);
+							if ($result === false)
 							{
 								throw new UserError($allowlist->getLastError());
 							}
-							$allowlist->logGraphqlInboundRouteAllowlistChange($did, $cid, $listId);
-							return ['listId' => (string)$listId];
+							return [
+								'listId' => $result['listId'] === null ? null : (string)$result['listId'],
+							];
 						}
 					]),
 					'setOutboundRouteAllowlist' => Relay::mutationWithClientMutationId([
@@ -292,7 +278,7 @@ class Allowlist extends Base {
 							],
 							'listId' => [
 								'type' => Type::id(),
-								'description' => _('Allowlist id, or omit/null to turn auto-add off')
+								'description' => _('Allowlist id, or null to turn auto-add off')
 							],
 							'remove' => [
 								'type' => Type::nonNull(Type::int()),
@@ -315,28 +301,18 @@ class Allowlist extends Base {
 						'mutateAndGetPayload' => function ($input) {
 							$allowlist = $this->freepbx->Allowlist;
 							$routeId = isset($input['routeId']) ? $input['routeId'] : null;
-							if (!is_scalar($routeId) || !preg_match('/^[0-9]{1,6}$/D', (string)$routeId))
-							{
-								throw new UserError(_('Invalid outbound route id.'));
-							}
-							$listId = $this->resolveRouteListIdArg(array_key_exists('listId', $input) ? $input['listId'] : null);
-							if ($listId === null)
-							{
-								if (!$allowlist->routeDelete((int)$routeId))
-								{
-									throw new UserError($allowlist->getLastError());
-								}
-								$allowlist->logGraphqlOutboundRouteAllowlistChange((int)$routeId, null);
-								return ['listId' => null];
-							}
 							$remove = isset($input['remove']) ? $input['remove'] : null;
 							$store = isset($input['store']) ? $input['store'] : null;
-							if (!$allowlist->routeAdd((int)$routeId, $remove, $store, $listId))
+							$listIdProvided = array_key_exists('listId', $input);
+							$listIdRaw = $listIdProvided ? $input['listId'] : null;
+							$result = $allowlist->applyGraphqlOutboundRouteAllowlist($routeId, $remove, $store, $listIdRaw, $listIdProvided);
+							if ($result === false)
 							{
 								throw new UserError($allowlist->getLastError());
 							}
-							$allowlist->logGraphqlOutboundRouteAllowlistChange((int)$routeId, $listId);
-							return ['listId' => (string)$listId];
+							return [
+								'listId' => $result['listId'] === null ? null : (string)$result['listId'],
+							];
 						}
 					])
 				];

@@ -445,6 +445,143 @@ class Allowlist implements BMO
         return false;
     }
 
+    public function outboundRouteExistsInCore($routeId)
+    {
+        if (!is_scalar($routeId) || !preg_match('/^[0-9]{1,6}$/D', (string)$routeId))
+        {
+            return false;
+        }
+        if (!function_exists('core_routing_list'))
+        {
+            return false;
+        }
+        $list = core_routing_list();
+        if (!is_array($list))
+        {
+            return false;
+        }
+        $want = (int)$routeId;
+        foreach ($list as $item)
+        {
+            if (!is_array($item))
+            {
+                continue;
+            }
+            if ((int)($item['route_id'] ?? 0) === $want)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function signalRouteScreeningDialplanReload()
+    {
+        if (function_exists('needreload'))
+        {
+            needreload();
+        }
+    }
+
+    /**
+     * @return array{listId:?int}|false
+     */
+    public function applyGraphqlInboundRouteAllowlist($did, $cid, $listIdRaw, $listIdProvided)
+    {
+        $this->lastError = '';
+        if (!$listIdProvided)
+        {
+            $this->lastError = _('Specify listId to assign an allowlist, or null to turn screening off.');
+            return false;
+        }
+        if (!self::validDidCid($did, $cid))
+        {
+            $this->lastError = _('DID and caller ID may only contain digits, + and dial-pattern characters.');
+            return false;
+        }
+        if (!$this->inboundRouteExistsInCore($did, $cid))
+        {
+            $this->lastError = _('Inbound route not found.');
+            return false;
+        }
+        if ($listIdRaw === null)
+        {
+            if (!$this->didDelete($did, $cid))
+            {
+                return false;
+            }
+            $this->signalRouteScreeningDialplanReload();
+            $this->logGraphqlInboundRouteAllowlistChange($did, $cid, null);
+            return array('listId' => null);
+        }
+        $listId = $this->resolveGraphqlRouteListIdArg($listIdRaw);
+        if ($listId === false || $listId === null)
+        {
+            if ($this->lastError === '')
+            {
+                $this->lastError = _('Unknown allowlist.');
+            }
+            return false;
+        }
+        if (!$this->didAdd($did, $cid, $listId))
+        {
+            return false;
+        }
+        $this->signalRouteScreeningDialplanReload();
+        $this->logGraphqlInboundRouteAllowlistChange($did, $cid, $listId);
+        return array('listId' => $listId);
+    }
+
+    /**
+     * @return array{listId:?int}|false
+     */
+    public function applyGraphqlOutboundRouteAllowlist($routeId, $remove, $store, $listIdRaw, $listIdProvided)
+    {
+        $this->lastError = '';
+        if (!$listIdProvided)
+        {
+            $this->lastError = _('Specify listId to assign an allowlist, or null to turn auto-add off.');
+            return false;
+        }
+        if (!is_scalar($routeId) || !preg_match('/^[0-9]{1,6}$/D', (string)$routeId))
+        {
+            $this->lastError = _('Invalid outbound route id.');
+            return false;
+        }
+        $rid = (int)$routeId;
+        if (!$this->outboundRouteExistsInCore($rid))
+        {
+            $this->lastError = _('Outbound route not found.');
+            return false;
+        }
+        if ($listIdRaw === null)
+        {
+            if (!$this->routeDelete($rid))
+            {
+                return false;
+            }
+            $this->signalRouteScreeningDialplanReload();
+            $this->logGraphqlOutboundRouteAllowlistChange($rid, null);
+            return array('listId' => null);
+        }
+        $listId = $this->resolveGraphqlRouteListIdArg($listIdRaw);
+        if ($listId === false || $listId === null)
+        {
+            if ($this->lastError === '')
+            {
+                $this->lastError = _('Unknown allowlist.');
+            }
+            return false;
+        }
+        if (!$this->routeAdd($rid, $remove, $store, $listId))
+        {
+            return false;
+        }
+        $this->signalRouteScreeningDialplanReload();
+        $this->logGraphqlOutboundRouteAllowlistChange($rid, $listId);
+        return array('listId' => $listId);
+    }
+
     public function logGraphqlInboundRouteAllowlistChange($did, $cid, $listIdOrNull)
     {
         $exten = $did . ($cid === '' ? '' : '/' . $cid);
