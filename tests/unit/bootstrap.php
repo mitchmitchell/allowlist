@@ -87,7 +87,7 @@ namespace {
 		public function get($k) { return array_key_exists($k, $this->vals) ? $this->vals[$k] : false; }
 	}
 	class FakeFreePBX {
-		public $astman, $Blacklist, $Destinations, $Config;
+		public $astman, $Blacklist, $Destinations, $Config, $Allowlist;
 		public function __construct() {
 			$this->astman = new FakeAstman();
 			$this->Blacklist = new FakeBlacklist();
