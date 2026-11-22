@@ -13,24 +13,23 @@ include __DIR__.'/functions.migrated.php';
 function allowlist_hook_core($viewing_itemid, $target_menuid) {
     switch ($target_menuid) {
         case 'did':
-            $enabled = allowlist_did_get($viewing_itemid);
+            $current = allowlist_did_list_state($viewing_itemid);
+            $select = allowlist_list_select_html('allowlist_screen_list', 'allowlist_screen_list', $current['listId'], _("No screening"));
+            $stale = $current['stale'] ? '<div class="alert alert-warning">' . _("This route points at an allowlist that no longer exists, so calls on it are not screened. Choose a list and submit to screen it again.") . '</div>' : '';
             $html= '
                 <!--allowlist hook -->
-                <!--Enable/Disable Allowlist on Route-->
+                <!--Allowlist used to screen this Route-->
                 <div class="element-container">
                     <div class="row">
                         <div class="col-md-12">
                             <div class="row">
                                 <div class="form-group">
                                     <div class="col-md-3">
-                                        <label class="control-label" for="enable_allowlist">'. _("Enable Allowlist Screening").'</label>
-                                        <i class="fa fa-question-circle fpbx-help-icon" data-for="enable_allowlist"></i>
+                                        <label class="control-label" for="allowlist_screen_list">'. _("Allowlist Screening").'</label>
+                                        <i class="fa fa-question-circle fpbx-help-icon" data-for="allowlist_screen_list"></i>
                                     </div>
-                                    <div class="col-md-9 radioset">
-                                        <input type="radio" name="enable_allowlist" id="enable_allowlist_yes" value="yes" '. ($enabled?"CHECKED":"").'>
-                                        <label for="enable_allowlist_yes">'. _("Yes").'</label>
-                                        <input type="radio" name="enable_allowlist" id="enable_allowlist_no" value="no" '. ($enabled?"":"CHECKED").'>
-                                        <label for="enable_allowlist_no">'. _("No").'</label>
+                                    <div class="col-md-9">
+                                        '. $stale . $select .'
                                     </div>
                                 </div>
                             </div>
@@ -38,11 +37,11 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
                     </div>
                     <div class="row">
                         <div class="col-md-12">
-                            <span id="enable_allowlist-help" class="help-block fpbx-help-block">'. _("Controls whether Allowlist screening is used on the Route.").'</span>
+                            <span id="allowlist_screen_list-help" class="help-block fpbx-help-block">'. _("Choose which allowlist screens calls on this Route, or No screening to let every caller through.").'</span>
                         </div>
                     </div>
                 </div>
-                <!--END Enable/Disable Allowlist on Route-->
+                <!--END Allowlist used to screen this Route-->
                 <!--END allowlist hook-->
             ';
             return $html;
@@ -51,6 +50,8 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
             $autoadd = allowlist_route_get($viewing_itemid);
             $remcount = allowlist_route_remcount($viewing_itemid);
             $stocount = allowlist_route_stocount($viewing_itemid);
+            $routeListId = allowlist_route_list_id($viewing_itemid);
+            $routeSelect = allowlist_list_select_html('autoadd_allowlist_list', 'autoadd_allowlist_list', $routeListId === false ? 1 : $routeListId, null);
             $html= '
                 <!--allowlist hook -->
                 <!--Automatically add Outbound Callers to Allowlist on Route-->
@@ -84,6 +85,8 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
                                         <input type="number" class="form-control" id="stodigits" name="stocount" value='. ($stocount != null?"$stocount":"99").'>
                                     </div>
                                     <div class="col-md-2">
+                                        <label class="sr-only" for="autoadd_allowlist_list">'. _("Add to list").'</label>
+                                        '. $routeSelect .'
                                     </div>
                                 </div>
                             </div>
@@ -103,6 +106,11 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
                                 <span id="stodigits-help" class="help-block fpbx-help-block">'. _("Number of digits to store").'</span>
                             </div>
                         </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <span id="autoadd_allowlist_list-help" class="help-block fpbx-help-block">'. _("Allowlist that called numbers are added to").'</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!--END Automatically add Outbound Callers to Allowlist on Route-->
@@ -119,11 +127,12 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
     
     switch ($request['action']) {
         case 'addIncoming':
-            if ($request['enable_allowlist'] == 'yes') {
+            $screen = allowlist_hook_requested_screen_list($request);
+            if ($screen !== null) {
                 $invalidDIDChars = array('<', '>');
                 $extension = trim(str_replace($invalidDIDChars, "", $request['extension']));
                 $cidnum = trim(str_replace($invalidDIDChars, "", $request['cidnum']));
-                if (!$allowlist->didAdd($extension, $cidnum)) {
+                if (!$allowlist->didAdd($extension, $cidnum, $screen)) {
                     $allowlist->reportHookRejection(_('inbound route'));
                 }
             }
@@ -144,8 +153,9 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
             // Validate and write the new setting first; remove the old one only
             // after that succeeds, so a rejected value never drops the route's setting.
             $old = count($extarray) == 2 ? $extarray : null;
-            if ($request['enable_allowlist'] == 'yes') {
-                if (!$allowlist->didAdd($extension, $cidnum)) {
+            $screen = allowlist_hook_requested_screen_list($request);
+            if ($screen !== null) {
+                if (!$allowlist->didAdd($extension, $cidnum, $screen)) {
                     $allowlist->reportHookRejection(_('inbound route'));
                     break;
                 }
@@ -162,7 +172,7 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
             break;
         case 'addroute':
             if ($request['autoadd_allowlist'] == 'yes') {
-                if (!$allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount'])) {
+                if (!$allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount'], allowlist_hook_requested_autoadd_list($request))) {
                     $allowlist->reportHookRejection(_('outbound route auto-add'));
                 }
             }
@@ -176,7 +186,7 @@ function allowlist_hookProcess_core($viewing_itemid, $request) {
             // routeAdd overwrites the same key, so only delete when auto-add is
             // turned off; a rejected value leaves the existing setting in place.
             if ($request['autoadd_allowlist'] == 'yes') {
-                if (!$allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount'])) {
+                if (!$allowlist->routeAdd($request['id'], $request['remcount'], $request['stocount'], allowlist_hook_requested_autoadd_list($request))) {
                     $allowlist->reportHookRejection(_('outbound route auto-add'));
                 }
             } else {
@@ -246,12 +256,63 @@ function allowlist_hookGet_config($engine) {
     }
 }
 
-function allowlist_did_get($did) {
-    $extarray = explode('/', $did, 2);
-    if (count($extarray) == 2) {
-            return FreePBX::Allowlist()->didIsSet($extarray[0],$extarray[1]);
+/*
+ * List chosen on the inbound route form, or null for no screening. The select
+ * posts one value; the value is passed through unvalidated so didAdd() rejects
+ * anything that is not a known list id (including an array from a hand-crafted
+ * multi-value POST). A form that only posts the pre-17.0.2 enable_allowlist
+ * radio keeps working: "yes" means the Default list.
+ */
+function allowlist_hook_requested_screen_list($request) {
+    if (array_key_exists('allowlist_screen_list', $request)) {
+        return $request['allowlist_screen_list'] === '' ? null : $request['allowlist_screen_list'];
     }
-    return false;
+    return (isset($request['enable_allowlist']) && $request['enable_allowlist'] == 'yes') ? 1 : null;
+}
+
+/* Target list for outbound auto-add; Default when the form does not send one. */
+function allowlist_hook_requested_autoadd_list($request) {
+    if (array_key_exists('autoadd_allowlist_list', $request) && $request['autoadd_allowlist_list'] !== '') {
+        return $request['autoadd_allowlist_list'];
+    }
+    return 1;
+}
+
+/* Every list name goes through formatListNameForDisplay(); ids are cast to int. */
+function allowlist_list_select_html($name, $id, $selected, $noneLabel) {
+    $html = '<select class="form-control" name="' . $name . '" id="' . $id . '">';
+    if ($noneLabel !== null) {
+        $html .= '<option value=""' . ($selected === false ? ' selected' : '') . '>' . htmlspecialchars($noneLabel, ENT_QUOTES, 'UTF-8') . '</option>';
+    }
+    foreach (FreePBX::Allowlist()->listGetAll() as $listId => $listName) {
+        $html .= '<option value="' . (int)$listId . '"' . ($selected !== false && (int)$selected === (int)$listId ? ' selected' : '') . '>' . \FreePBX\modules\Allowlist::formatListNameForDisplay($listName) . '</option>';
+    }
+    return $html . '</select>';
+}
+
+/*
+ * Screening state of the inbound route being viewed. stale is true when a did/
+ * key exists but does not name a list that exists, which the dialplan treats as
+ * unscreened (ADR Q5).
+ */
+function allowlist_did_list_state($did) {
+    $extarray = explode('/', $did, 2);
+    if (count($extarray) != 2) {
+        return array('listId' => false, 'stale' => false);
+    }
+    $allowlist = FreePBX::Allowlist();
+    if (!$allowlist->didIsSet($extarray[0], $extarray[1])) {
+        return array('listId' => false, 'stale' => false);
+    }
+    $listId = $allowlist->didGetListId($extarray[0], $extarray[1]);
+    if ($listId === false || !$allowlist->listExists($listId)) {
+        return array('listId' => false, 'stale' => true);
+    }
+    return array('listId' => $listId, 'stale' => false);
+}
+
+function allowlist_route_list_id($route_id) {
+    return FreePBX::Allowlist()->routeGetListId($route_id);
 }
 
 function allowlist_inbound_screen_list_id($did, $cid) {
