@@ -1869,6 +1869,9 @@ allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' =
 check(!isset($fp->astman->db['/allowlist/did/5550160']), 'edtIncoming with No screening removes the setting');
 allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550170/', 'extension' => '5550170', 'cidnum' => '', 'enable_allowlist' => 'yes'));
 check($fp->astman->db['/allowlist/did/5550170'] === '1', 'a form posting only the legacy enable_allowlist=yes still screens against Default');
+allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550171', 'cidnum' => '', 'enable_allowlist' => 'on'));
+allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550172', 'cidnum' => '', 'enable_allowlist' => array('yes')));
+check(!isset($fp->astman->db['/allowlist/did/5550171']) && !isset($fp->astman->db['/allowlist/did/5550172']), 'only the exact legacy value yes turns screening on');
 
 $rt = array('action' => 'editroute', 'id' => '7', 'autoadd_allowlist' => 'yes', 'remcount' => '0', 'stocount' => '10');
 allowlist_hookProcess_core(null, $rt + array('autoadd_allowlist_list' => '2'));
