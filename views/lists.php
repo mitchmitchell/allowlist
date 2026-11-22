@@ -44,7 +44,7 @@ $alLists = isset($lists) && is_array($lists) ? $lists : array();
 	$alLocked = $alId === 1 || !empty($alUses);
 	$alWhy = $alId === 1 ? _("The default allowlist cannot be deleted.") : (!empty($alUses) ? _("Remove this list from its routes before deleting it.") : '');
 ?>
-		<tr data-list-id="<?php echo $alId ?>">
+		<tr>
 			<td><?php echo $alId ?></td>
 			<td><?php echo $alName ?></td>
 			<td><?php echo (int)$alList['memberCount'] ?></td>

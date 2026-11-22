@@ -1898,5 +1898,89 @@ $fp->astman->db['/allowlist-list/2/2025550182'] = 'c';
 $r = ajax($al, array('command' => 'listdelete', 'listId' => '2'));
 check($r['status'] === true && !isset($fp->astman->db['/allowlist-lists/2']) && !isset($fp->astman->db['/allowlist-list/2/2025550182']), 'AJAX listdelete removes an unassigned list and its members');
 
+// ---- PR-D1 review follow-ups
+list($fp, $al) = freshHarness();
+$editRaceLock = sys_get_temp_dir() . '/allowlist-unit-editrace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+$al->testListMutationLockPath = $editRaceLock;
+check($al->listCreate('EditRace') === 2, 'edit race test creates list 2');
+$fp->astman->db['/allowlist-list/2/2025550101'] = 'prior';
+$fp->astman->db['/allowlist-list/2/2025550102'] = 'b';
+$fp->astman->failDel = false;
+$editRaceCalls = 0;
+$editRacePeerDeleted = false;
+$al->testBeforeListMutationLockAcquire = function ($me) use ($fp, $editRaceLock, &$editRaceCalls, &$editRacePeerDeleted) {
+	$editRaceCalls++;
+	if ($editRaceCalls !== 2) {
+		return;
+	}
+	$probe = fopen($editRaceLock, 'c+');
+	if ($probe !== false && flock($probe, LOCK_EX | LOCK_NB)) {
+		foreach (array_keys($fp->astman->db) as $k) {
+			if ($k === '/allowlist-lists/2' || strpos($k, '/allowlist-list/2/') === 0) {
+				unset($fp->astman->db[$k]);
+			}
+		}
+		$editRacePeerDeleted = true;
+		flock($probe, LOCK_UN);
+	}
+	if ($probe !== false) {
+		fclose($probe);
+	}
+};
+$editRaceOk = $al->listMemberEdit(2, '2025550102', 2, array('number' => '2025550101', 'description' => 'new'));
+$al->testBeforeListMutationLockAcquire = null;
+check(!$editRacePeerDeleted, 'a second writer cannot get the list-mutation lock part-way through a member edit');
+$orphans = array_filter(array_keys($fp->astman->db), function ($k) { return strpos($k, '/allowlist-list/2/') === 0; });
+check(isset($fp->astman->db['/allowlist-lists/2']) || $orphans === array(), 'member edit never leaves list 2 members without list 2 metadata');
+check($editRaceOk === true && $fp->astman->db['/allowlist-list/2/2025550101'] === 'new' && !isset($fp->astman->db['/allowlist-list/2/2025550102']), 'locked member edit completes normally');
+allowlistUnitUnlinkIfExists($editRaceLock);
+
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist-lists/2'] = 'Kids';
+$fp->astman->db['/allowlist-list/2/2025550210'] = 'k';
+$fp->Blacklist = new class { public $added = array(); public function numberAdd($post) { $this->added[] = $post; return false; } };
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']) && strpos($r['message'], 'Blacklist') !== false, 'block on a named list keeps the number when the Blacklist rejects it');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'block on Default keeps the number when the Blacklist rejects it');
+$fp->Blacklist = new class { public $added = array(); public function numberAdd($post) { $this->added[] = $post; } };
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550210']) && count($fp->Blacklist->added) === 1, 'a Blacklist numberAdd that returns nothing still blocks');
+
+list($fp, $al) = fresh();
+$countingAstman = new class extends FakeAstman { public $shows = 0; public function database_show($fam) { $this->shows++; return parent::database_show($fam); } };
+$countingAstman->db = $fp->astman->db;
+$fp->astman = $countingAstman;
+$al = new Allowlist($fp);
+for ($i = 2; $i <= 21; $i++) {
+	$fp->astman->db['/allowlist-lists/' . $i] = 'L' . $i;
+	$fp->astman->db['/allowlist-list/' . $i . '/20255503' . sprintf('%02d', $i)] = 'm';
+}
+$fp->astman->db['/allowlist-list/5/2025550399'] = 'm2';
+$fp->astman->db['/allowlist/did/5550505'] = '5';
+$fp->astman->db['/allowlist/autoadd/12'] = '1,0,10,5';
+$fp->astman->shows = 0;
+$summary = $al->summarizeAllowlistsForGraphql();
+check($fp->astman->shows === 3, 'list summary reads each AstDB family once (' . $fp->astman->shows . ' shows for 21 lists)');
+$byId = array_column($summary, null, 'id');
+check(count($summary) === 21 && $byId[1]['memberCount'] === 2 && $byId[5]['memberCount'] === 2 && $byId[7]['memberCount'] === 1, 'one-pass summary counts members per list');
+check($byId[5]['inboundRoutes'] === array('5550505') && $byId[5]['outboundRoutes'] === array('12') && $byId[1]['inboundRoutes'] === array('5550100/') && $byId[1]['outboundRoutes'] === array('1'), 'one-pass summary groups routes by list');
+check($al->listRoutesUsingList(5) === array('inbound' => array('5550505'), 'outbound' => array('12')) && $al->listRoutesUsingList(9) === array('inbound' => array(), 'outbound' => array()), 'listRoutesUsingList matches the summary');
+
+$js = file_get_contents($root . '/assets/js/allowlist.js');
+check(strpos($js, ".data('list-") === false && substr_count($js, ".attr('data-list-name')") === 2, 'Lists tab JS reads list names with .attr(), never type-coercing .data()');
+$pot = file_get_contents($root . '/i18n/allowlist.pot');
+$missing = array();
+foreach (array('views/lists.php', 'views/algrid.php', 'views/addnumber.php', 'assets/js/allowlist.js', 'Allowlist.class.php') as $f) {
+	preg_match_all('/\b_\(\s*"((?:[^"\\\\]|\\\\.)*)"\s*\)|\b_\(\s*\'((?:[^\'\\\\]|\\\\.)*)\'\s*\)/', file_get_contents($root . '/' . $f), $mm, PREG_SET_ORDER);
+	foreach ($mm as $m) {
+		$str = isset($m[2]) && $m[2] !== '' ? stripslashes($m[2]) : stripcslashes($m[1]);
+		if (strpos($pot, 'msgid ' . json_encode($str, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === false) {
+			$missing[] = $f . ': ' . $str;
+		}
+	}
+}
+check($missing === array(), 'allowlist.pot has every _() string from the page views, JS and class' . ($missing ? ' (missing: ' . implode(' | ', array_slice($missing, 0, 5)) . ')' : ''));
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

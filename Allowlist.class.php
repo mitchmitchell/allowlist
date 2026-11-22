@@ -823,16 +823,28 @@ class Allowlist implements BMO
      */
     public function summarizeAllowlistsForGraphql()
     {
-        $out = array();
-        foreach ($this->listGetAll() as $id => $name)
+        $lists = $this->listGetAll();
+        $main = $this->astman->database_show('allowlist');
+        $named = $this->astman->database_show('allowlist-list');
+        $routes = self::routesByListFromShow($main);
+        $counts = array(self::DEFAULT_LIST_ID => count(self::allowlistRowsFromShow($main)));
+        foreach (array_keys($named) as $k)
         {
-            $uses = $this->listRoutesUsingList($id);
+            if (preg_match('#^/allowlist-list/([0-9]{1,4})/[^/]+$#D', $k, $m))
+            {
+                $id = (int)$m[1];
+                $counts[$id] = (isset($counts[$id]) ? $counts[$id] : 0) + 1;
+            }
+        }
+        $out = array();
+        foreach ($lists as $id => $name)
+        {
             $out[] = array(
                 'id' => $id,
                 'name' => $name,
-                'memberCount' => count($this->listMemberGetAll($id)),
-                'inboundRoutes' => $uses['inbound'],
-                'outboundRoutes' => $uses['outbound'],
+                'memberCount' => isset($counts[$id]) ? $counts[$id] : 0,
+                'inboundRoutes' => isset($routes[$id]) ? $routes[$id]['inbound'] : array(),
+                'outboundRoutes' => isset($routes[$id]) ? $routes[$id]['outbound'] : array(),
             );
         }
         return $out;
@@ -1987,33 +1999,40 @@ class Allowlist implements BMO
     {
         if ($this->astman->connected())
         {
-            $list = $this->astman->database_show('allowlist');
-            $allowlisted = array();
-            foreach ($list as $k => $v)
-            {
-                $array_continue = array(
-                    '/allowlist/dest',
-                    '/allowlist/pause',
-                    '/allowlist/knowncallers',
-                    '/allowlist/pausepin',
-                    '/allowlist/debuglog'
-                );
-                if (in_array($k, $array_continue) || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
-                {
-                    continue;
-                }
-                $numbers = substr($k, 11);
-                $allowlisted[] = array(
-                    'number' => $numbers,
-                    'description' => $v
-                );
-            }
-            return $allowlisted;
+            return self::allowlistRowsFromShow($this->astman->database_show('allowlist'));
         }
         else
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
+    }
+
+    /**
+     * Default-list rows from a database_show('allowlist') result: everything
+     * except the settings keys and the did/ and autoadd/ route mappings.
+     */
+    private static function allowlistRowsFromShow($show)
+    {
+        $skip = array(
+            '/allowlist/dest',
+            '/allowlist/pause',
+            '/allowlist/knowncallers',
+            '/allowlist/pausepin',
+            '/allowlist/debuglog'
+        );
+        $rows = array();
+        foreach ($show as $k => $v)
+        {
+            if (in_array($k, $skip) || substr($k, 0, 18) == '/allowlist/autoadd' || substr($k, 0, 14) == '/allowlist/did')
+            {
+                continue;
+            }
+            $rows[] = array(
+                'number' => substr($k, 11),
+                'description' => $v
+            );
+        }
+        return $rows;
     }
 
     /**
@@ -2173,7 +2192,10 @@ class Allowlist implements BMO
                 $this->lastError = _('Description must be at most 255 characters with no control characters.');
                 return false;
             }
-            $this->FreePBX->Blacklist->numberAdd(array('number' => $number, 'description' => $desc));
+            if (!$this->blockViaBlacklist($number, $desc))
+            {
+                return false;
+            }
             return ($this->numberDel($number));
         }
         else
@@ -2722,13 +2744,23 @@ class Allowlist implements BMO
     public function listRoutesUsingList($listId)
     {
         $id = self::parseListIdValue($listId);
-        $inbound = array();
-        $outbound = array();
         if ($id === false)
         {
-            return array('inbound' => $inbound, 'outbound' => $outbound);
+            return array('inbound' => array(), 'outbound' => array());
         }
-        foreach ($this->astman->database_show('allowlist') as $k => $v)
+        $routes = self::routesByListFromShow($this->astman->database_show('allowlist'));
+        return isset($routes[$id]) ? $routes[$id] : array('inbound' => array(), 'outbound' => array());
+    }
+
+    /**
+     * Group the did/ and autoadd/ mappings in a database_show('allowlist') result
+     * by list id. Unparseable values are left out, as the runtime ignores them.
+     * @return array<int, array{inbound:string[],outbound:string[]}>
+     */
+    private static function routesByListFromShow($show)
+    {
+        $out = array();
+        foreach ($show as $k => $v)
         {
             if (strpos($k, '/allowlist/') !== 0)
             {
@@ -2738,23 +2770,29 @@ class Allowlist implements BMO
             if (strpos($rel, 'did/') === 0)
             {
                 $mapped = self::parseDidMappingValue($v);
-                if ($mapped === $id)
+                if ($mapped !== false)
                 {
-                    $inbound[] = substr($rel, 4);
+                    $out[$mapped]['inbound'][] = substr($rel, 4);
                 }
             }
             elseif (strpos($rel, 'autoadd/') === 0)
             {
                 $parsed = self::parseAutoaddMappingValue((string)$v);
-                if (is_array($parsed) && $parsed['listId'] === $id)
+                if (is_array($parsed))
                 {
-                    $outbound[] = substr($rel, 8);
+                    $out[$parsed['listId']]['outbound'][] = substr($rel, 8);
                 }
             }
         }
-        sort($inbound, SORT_STRING);
-        sort($outbound, SORT_STRING);
-        return array('inbound' => $inbound, 'outbound' => $outbound);
+        foreach ($out as $id => $uses)
+        {
+            $inbound = isset($uses['inbound']) ? $uses['inbound'] : array();
+            $outbound = isset($uses['outbound']) ? $uses['outbound'] : array();
+            sort($inbound, SORT_STRING);
+            sort($outbound, SORT_STRING);
+            $out[$id] = array('inbound' => $inbound, 'outbound' => $outbound);
+        }
+        return $out;
     }
 
     public function listDelete($listId)
@@ -2961,8 +2999,10 @@ class Allowlist implements BMO
      * Replace a member, optionally moving it to another list. Same ordering as
      * numberEdit(): write the new entry first, then delete the old one, and if
      * the delete fails restore the new key's prior value so the edit is
-     * all-or-nothing. Not wrapped in the list-mutation lock because
-     * listMemberAdd()/listMemberDel() each take it and the lock is not reentrant.
+     * all-or-nothing. The whole edit, rollback included, runs under the
+     * list-mutation lock (reentrant, so listMemberAdd()/listMemberDel() nest),
+     * so a concurrent listDelete() cannot remove either list part-way and leave
+     * a rolled-back member behind without its list metadata.
      */
     public function listMemberEdit($oldListId, $oldval, $newListId, $post)
     {
@@ -2987,6 +3027,13 @@ class Allowlist implements BMO
         {
             throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
         }
+        return $this->withListMutationLock(function () use ($from, $to, $oldval, $post, $entry) {
+            return $this->listMemberEditLocked($from, $to, $oldval, $post, $entry);
+        });
+    }
+
+    private function listMemberEditLocked($from, $to, $oldval, $post, $entry)
+    {
         if (!$this->listExists($from) || !$this->listExists($to))
         {
             $this->lastError = _('Unknown allowlist.');
@@ -3057,8 +3104,26 @@ class Allowlist implements BMO
             $this->lastError = _('Description must be at most 255 characters with no control characters.');
             return false;
         }
-        $this->FreePBX->Blacklist->numberAdd(array('number' => $number, 'description' => $desc));
+        if (!$this->blockViaBlacklist($number, $desc))
+        {
+            return false;
+        }
         return $this->listMemberDel($id, $number);
+    }
+
+    /**
+     * Hand the number to the Blacklist module. Only an explicit false counts as a
+     * failure: Blacklist::numberAdd() has returned nothing in some releases, and
+     * treating that as failure would make blocking impossible there.
+     */
+    private function blockViaBlacklist($number, $desc)
+    {
+        if ($this->FreePBX->Blacklist->numberAdd(array('number' => $number, 'description' => $desc)) === false)
+        {
+            $this->lastError = _('The Blacklist module did not accept the number, so it was left on the allowlist.');
+            return false;
+        }
+        return true;
     }
 
     private function nextAvailableListId($lists)

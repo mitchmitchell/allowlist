@@ -229,7 +229,9 @@ $("#blkDelete").on("click", function(e) {
 });
 
 /* Lists tab: create, rename and delete reload the page so the picker, the
-   modal select and this table are all re-rendered (and re-escaped) server side. */
+   modal select and this table are all re-rendered (and re-escaped) server side.
+   Names and ids are read with .attr(), not .data(): .data() type-coerces, so a
+   list named "1e3" would come back as the number 1000. */
 function alListRequest(post_data) {
 	post_data.module = 'allowlist';
 	post_data.token = allowlistCsrfToken();
@@ -240,6 +242,9 @@ function alListRequest(post_data) {
 		} else {
 			fpbxToast(data.message, '', 'error');
 		}
+	})
+	.fail(function() {
+		fpbxToast(_('The request failed; reload the page and try again.'), '', 'error');
 	});
 }
 
@@ -253,8 +258,8 @@ $('#listcreate').on('click', function() {
 });
 
 $(document).on('click', '[data-list-action="rename"]', function() {
-	var id = $(this).data('list-id');
-	var name = prompt(_('New name for this list'), $(this).data('list-name'));
+	var id = $(this).attr('data-list-id');
+	var name = prompt(_('New name for this list'), $(this).attr('data-list-name'));
 	if (name === null || name === '') {
 		return;
 	}
@@ -262,10 +267,10 @@ $(document).on('click', '[data-list-action="rename"]', function() {
 });
 
 $(document).on('click', '[data-list-action="delete"]', function() {
-	var id = $(this).data('list-id');
+	var id = $(this).attr('data-list-id');
 	fpbxConfirm(
-		/* fpbxConfirm renders HTML and .data() returns the decoded name; alEscapeHtml is defined in views/algrid.php on this page. */
-		sprintf(_('Delete the list %s and all of its numbers?'), alEscapeHtml($(this).data('list-name'))),
+		/* fpbxConfirm renders HTML and .attr() returns the decoded name; alEscapeHtml is defined in views/algrid.php on this page. */
+		sprintf(_('Delete the list %s and all of its numbers?'), alEscapeHtml($(this).attr('data-list-name'))),
 		_("Yes"), _("No"),
 		function() {
 			alListRequest({ command: 'listdelete', listId: id });
