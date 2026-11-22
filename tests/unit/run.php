@@ -1790,5 +1790,118 @@ try {
 check(!$hookThrew && count(array_filter($ext->splices, function ($s) { return $s['app'] === 'ext_gosub'; })) === 0, 'hookGet_config without AMI does not throw and emits no screening Gosub');
 check(strpos(implode("\n", $al->auditEntries), 'Asterisk Manager not connected') !== false && strpos(implode("\n", $al->auditEntries), '5550500') === false, 'AMI-down dialplan audit has no route numbers');
 
+// ---- PR-D2: inbound and outbound route hook list selects
+list($fp, $al) = fresh();
+$fp->Notifications = new FakeNotifications();
+FreePBX::$al = $al;
+$fp->astman->db['/allowlist-lists/2'] = '"><img src=x onerror=alert(1)>';
+$fp->astman->db['/allowlist-lists/3'] = 'Tom & Jerry "x"';
+unset($fp->astman->db['/allowlist/did/5550100/']);
+$fp->astman->db['/allowlist/did/5550100'] = '1';
+$fp->astman->db['/allowlist/did/5550110'] = '2';
+$fp->astman->db['/allowlist/did/5550120'] = '99';
+$fp->astman->db['/allowlist/did/5550130/2025550100'] = '3';
+function allowlistUnitSelected($html, $name) {
+	if (!preg_match('/<select[^>]*name="' . preg_quote($name, '/') . '"[^>]*>([\s\S]*?)<\/select>/', $html, $m)) {
+		return null;
+	}
+	preg_match_all('/<option value="([^"]*)" selected>/', $m[1], $sel);
+	return $sel[1];
+}
+$h = allowlist_hook_core('5550110/', 'did');
+check(allowlistUnitSelected($h, 'allowlist_screen_list') === array('2'), 'inbound hook preselects the route list only');
+check(strpos($h, 'enable_allowlist') === false && substr_count($h, '<select') === 1, 'inbound hook posts one select instead of the Yes/No radio');
+check(strpos($h, '<img') === false && strpos($h, Allowlist::formatListNameForDisplay('"><img src=x onerror=alert(1)>')) !== false && strpos($h, 'Tom &amp; Jerry &quot;x&quot;') !== false, 'inbound hook escapes list names with formatListNameForDisplay');
+check(preg_match('/<option value="">No screening<\/option>/', $h) === 1, 'inbound hook offers No screening as an empty value');
+check(allowlistUnitSelected(allowlist_hook_core('5550100/', 'did'), 'allowlist_screen_list') === array('1'), 'legacy did value 1 preselects Default');
+check(allowlistUnitSelected(allowlist_hook_core('5550130/2025550100', 'did'), 'allowlist_screen_list') === array('3'), 'DID+CID route preselects its list');
+$h = allowlist_hook_core('5550140/', 'did');
+check(allowlistUnitSelected($h, 'allowlist_screen_list') === array('') && strpos($h, 'alert-warning') === false, 'unscreened route preselects No screening with no warning');
+$h = allowlist_hook_core('5550120/', 'did');
+check(allowlistUnitSelected($h, 'allowlist_screen_list') === array('choose') && strpos($h, 'alert-warning') !== false && strpos($h, '<option value="">No screening</option>') !== false, 'route pointing at a missing list preselects Choose a list with a warning, and still offers No screening');
+$w = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550120/', 'extension' => '5550120', 'cidnum' => '', 'allowlist_screen_list' => 'choose'));
+check($fp->astman->db['/allowlist/did/5550120'] === '99' && count($fp->Notifications->warnings) === $w + 1, 'saving an inbound route left on Choose a list is rejected and keeps the stale mapping');
+check(allowlistUnitSelected(allowlist_hook_core('5550120/', 'did'), 'allowlist_screen_list') === array('choose'), 'the stale warning survives an unrelated save');
+
+$fp->astman->db['/allowlist/autoadd/5'] = '1,1,10,3';
+$h = allowlist_hook_core('5', 'routing');
+check(allowlistUnitSelected($h, 'autoadd_allowlist_list') === array('3') && strpos($h, 'No screening') === false, 'outbound hook preselects the auto-add target list');
+check(strpos($h, '<img') === false && strpos($h, 'Tom &amp; Jerry &quot;x&quot;') !== false, 'outbound hook escapes list names');
+check(allowlistUnitSelected(allowlist_hook_core('1', 'routing'), 'autoadd_allowlist_list') === array('1'), 'outbound route without a 4th field preselects Default');
+check(allowlistUnitSelected(allowlist_hook_core('6', 'routing'), 'autoadd_allowlist_list') === array('1'), 'outbound route without auto-add preselects Default');
+$fp->astman->db['/allowlist/autoadd/11'] = '1,0,10,42';
+$h = allowlist_hook_core('11', 'routing');
+check(allowlistUnitSelected($h, 'autoadd_allowlist_list') === array('') && strpos($h, 'alert-warning') !== false && strpos($h, '<option value="" selected>Choose a list</option>') !== false, 'outbound route targeting a deleted list shows a warning and preselects Choose a list, not Default');
+$fp->astman->db['/allowlist/autoadd/12'] = '1,0,10,x';
+check(allowlistUnitSelected(allowlist_hook_core('12', 'routing'), 'autoadd_allowlist_list') === array('') && strpos(allowlist_hook_core('12', 'routing'), 'alert-warning') !== false, 'outbound route with an unparseable auto-add value is flagged as stale');
+$h = allowlist_hook_core('5', 'routing');
+check(strpos($h, 'alert-warning') === false && strpos($h, 'Choose a list') === false, 'outbound route with a valid list shows no warning or placeholder');
+foreach (array('5550110/' => 'did', '5550120/' => 'did', '5' => 'routing', '11' => 'routing') as $hookId => $hookMenu) {
+	$h = allowlist_hook_core($hookId, $hookMenu);
+	check(substr_count($h, '<div') === substr_count($h, '</div>'), "$hookMenu hook $hookId has balanced div tags");
+}
+$w = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '11', 'autoadd_allowlist' => 'yes', 'remcount' => '0', 'stocount' => '10', 'autoadd_allowlist_list' => ''));
+check($fp->astman->db['/allowlist/autoadd/11'] === '1,0,10,42' && count($fp->Notifications->warnings) === $w + 1, 'saving the Choose a list placeholder is rejected and does not retarget auto-add to Default');
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '11', 'autoadd_allowlist' => 'no', 'autoadd_allowlist_list' => ''));
+check(!isset($fp->astman->db['/allowlist/autoadd/11']), 'turning auto-add off on a stale route removes it');
+
+$warn = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550150', 'cidnum' => '', 'allowlist_screen_list' => '2'));
+check($fp->astman->db['/allowlist/did/5550150'] === '2', 'addIncoming stores the chosen list id');
+allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550151', 'cidnum' => '', 'allowlist_screen_list' => ''));
+check(!isset($fp->astman->db['/allowlist/did/5550151']), 'addIncoming with No screening writes nothing');
+allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550152', 'cidnum' => '', 'allowlist_screen_list' => '', 'enable_allowlist' => 'yes'));
+check(!isset($fp->astman->db['/allowlist/did/5550152']), 'the new select wins over a stale enable_allowlist field');
+check(count($fp->Notifications->warnings) === $warn, 'valid inbound choices raise no warning');
+
+$edt = array('action' => 'edtIncoming', 'extdisplay' => '5550150/', 'extension' => '5550150', 'cidnum' => '');
+allowlist_hookProcess_core(null, $edt + array('allowlist_screen_list' => '3'));
+check($fp->astman->db['/allowlist/did/5550150'] === '3' && count(array_filter(array_keys($fp->astman->db), function ($k) { return strpos($k, '/allowlist/did/5550150') === 0; })) === 1, 'edtIncoming replaces the list id and leaves one key for the route');
+foreach (array('99' => 'unknown list', '0' => 'id 0', '-1' => 'id -1', '1;Hangup' => 'injection', '2/../x' => 'path') as $bad => $label) {
+	$w = count($fp->Notifications->warnings);
+	allowlist_hookProcess_core(null, $edt + array('allowlist_screen_list' => (string)$bad));
+	check($fp->astman->db['/allowlist/did/5550150'] === '3' && count($fp->Notifications->warnings) === $w + 1, "edtIncoming rejects $label, keeps the old list and reports it");
+}
+$w = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, $edt + array('allowlist_screen_list' => array('1', '2')));
+check($fp->astman->db['/allowlist/did/5550150'] === '3' && count($fp->Notifications->warnings) === $w + 1, 'edtIncoming rejects a hand-crafted two-value POST and keeps the old list');
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550150/', 'extension' => '5550160', 'cidnum' => '', 'allowlist_screen_list' => '2'));
+check(!isset($fp->astman->db['/allowlist/did/5550150']) && $fp->astman->db['/allowlist/did/5550160'] === '2', 'edtIncoming moving the DID writes the new key with its list, then removes the old');
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550160/', 'extension' => '5550160', 'cidnum' => '', 'allowlist_screen_list' => ''));
+check(!isset($fp->astman->db['/allowlist/did/5550160']), 'edtIncoming with No screening removes the setting');
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550170/', 'extension' => '5550170', 'cidnum' => '', 'enable_allowlist' => 'yes'));
+check($fp->astman->db['/allowlist/did/5550170'] === '1', 'a form posting only the legacy enable_allowlist=yes still screens against Default');
+allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550171', 'cidnum' => '', 'enable_allowlist' => 'on'));
+allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550172', 'cidnum' => '', 'enable_allowlist' => array('yes')));
+check(!isset($fp->astman->db['/allowlist/did/5550171']) && !isset($fp->astman->db['/allowlist/did/5550172']), 'only the exact legacy value yes turns screening on');
+
+$rt = array('action' => 'editroute', 'id' => '7', 'autoadd_allowlist' => 'yes', 'remcount' => '0', 'stocount' => '10');
+allowlist_hookProcess_core(null, $rt + array('autoadd_allowlist_list' => '2'));
+check($fp->astman->db['/allowlist/autoadd/7'] === '1,0,10,2', 'editroute stores the chosen auto-add list');
+$w = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, $rt + array('autoadd_allowlist_list' => '99'));
+check($fp->astman->db['/allowlist/autoadd/7'] === '1,0,10,2' && count($fp->Notifications->warnings) === $w + 1, 'editroute with an unknown list keeps the old setting and reports it');
+allowlist_hookProcess_core(null, $rt + array('autoadd_allowlist_list' => array('2', '3')));
+check($fp->astman->db['/allowlist/autoadd/7'] === '1,0,10,2' && count($fp->Notifications->warnings) === $w + 2, 'editroute rejects a two-value list POST');
+allowlist_hookProcess_core(null, $rt);
+check($fp->astman->db['/allowlist/autoadd/7'] === '1,0,10', 'editroute without a list field targets Default');
+allowlist_hookProcess_core(null, array('action' => 'addroute', 'id' => '8', 'autoadd_allowlist' => 'yes', 'remcount' => '1', 'stocount' => '10', 'autoadd_allowlist_list' => '3'));
+check($fp->astman->db['/allowlist/autoadd/8'] === '1,1,10,3', 'addroute stores the chosen auto-add list');
+
+$unit_core_did_list = array(
+	array('extension' => '5550100', 'cidnum' => '', 'pricid' => false),
+	array('extension' => '5550110', 'cidnum' => '', 'pricid' => false),
+	array('extension' => '5550130', 'cidnum' => '2025550100', 'pricid' => false),
+);
+$ext = new FakeExt();
+allowlist_hookGet_config('asterisk');
+$rendered = array();
+foreach ($ext->splices as $sp) {
+	if ($sp['app'] === 'ext_gosub') { $rendered[$sp['exten']][] = $sp['rendered']; }
+}
+check($rendered === array('5550100' => array('Gosub(app-allowlist-check,s,1(1))'), '5550110' => array('Gosub(app-allowlist-check,s,1(2))'), '5550130/2025550100' => array('Gosub(app-allowlist-check,s,1(3))')), 'each screened DID gets exactly one Gosub with its list id after hook edits');
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);
