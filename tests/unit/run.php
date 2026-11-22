@@ -1943,7 +1943,12 @@ $r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' =>
 check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']) && !isset($fp->astman->db['/blacklist/2025550210']) && strpos($r['message'], 'Blacklist') !== false, 'block on a named list keeps the number when the blacklist write did not land (upstream still returns the number)');
 $r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
 check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']) && !isset($fp->astman->db['/blacklist/2025550113']), 'block on Default keeps the number when the blacklist write did not land');
-$fp->Blacklist->skipWrite = false;
+$fp->Blacklist = new class($fp->astman) { private $am; public function __construct($am) { $this->am = $am; } public function numberAdd($post) { $this->am->database_put('blacklist', $post['number'], ''); return $post['number']; } };
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']), 'block on a named list keeps the number when the blacklist entry reads back empty');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'block on Default keeps the number when the blacklist entry reads back empty');
+unset($fp->astman->db['/blacklist/2025550210'], $fp->astman->db['/blacklist/2025550113']);
 $fp->Blacklist = new class { public $added = array(); public function numberAdd($post) { $this->added[] = $post; return false; } };
 $r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
 check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']), 'block keeps the number when numberAdd reports false');
