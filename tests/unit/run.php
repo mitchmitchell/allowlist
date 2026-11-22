@@ -1950,6 +1950,20 @@ check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550
 $fp->Blacklist = new FakeBlacklist($fp->astman);
 $r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'description' => 'spam', 'listId' => '2'));
 check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550210']) && $fp->astman->db['/blacklist/2025550210'] === 'spam', 'block moves a named-list number to the blacklist when the write lands');
+$fp->astman->db['/allowlist-list/2/2025550211'] = '1';
+$r = ajax($al, array('command' => 'block', 'number' => '2025550211', 'description' => '', 'listId' => '2'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550211']) && $fp->astman->db['/blacklist/2025550211'] === '1', 'block with an empty description succeeds (upstream stores 1)');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/2025550113']) && $fp->astman->db['/blacklist/2025550113'] === '1', 'block on Default with no description succeeds');
+$fp->astman->db['/allowlist-list/2/2025550194'] = 'k';
+$r = ajax($al, array('command' => 'del', 'number' => '202-555-0194', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX del on a named list rejects a member sent in another format and keeps it');
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode(array('202-555-0194')), 'listId' => '2'));
+check($r['status'] === false && $r['deleted'] === 0 && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX bulkdelete on a named list rejects a member sent in another format and keeps it');
+$r = ajax($al, array('command' => 'del', 'number' => " 2025550194", 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX del on a named list rejects a non-canonical form that would normalize to a member');
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode(array("2025550194\n")), 'listId' => '2'));
+check($r['status'] === false && $r['deleted'] === 0 && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX bulkdelete on a named list rejects a non-canonical form that would normalize to a member');
 
 list($fp, $al) = fresh();
 $countingAstman = new class extends FakeAstman { public $shows = 0; public function database_show($fam) { $this->shows++; return parent::database_show($fam); } };

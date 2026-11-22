@@ -84,8 +84,9 @@ namespace {
 			return $out;
 		}
 	}
-	// Mirrors upstream Blacklist::numberAdd() (release/15.0-17.0): it writes blacklist/<number>, ignores the
-	// database_put result and returns the number. $skipWrite models a DBPut that AMI rejected.
+	// Mirrors upstream Blacklist::numberAdd() (release/17.0 L535-536): it writes blacklist/<number>, storing '1'
+	// for an empty description, ignores the database_put result and returns the number. $skipWrite models a
+	// DBPut that AMI rejected.
 	class FakeBlacklist {
 		public $added = array();
 		public $skipWrite = false;
@@ -94,7 +95,7 @@ namespace {
 		public function numberAdd($post) {
 			$this->added[] = $post;
 			if (!$this->skipWrite && $this->astman !== null) {
-				$this->astman->database_put('blacklist', $post['number'], $post['description']);
+				$this->astman->database_put('blacklist', $post['number'], (isset($post['description']) && $post['description'] !== '') ? $post['description'] : '1');
 			}
 			return $post['number'];
 		}
