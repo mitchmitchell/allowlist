@@ -14,8 +14,8 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
     switch ($target_menuid) {
         case 'did':
             $current = allowlist_did_list_state($viewing_itemid);
-            $select = allowlist_list_select_html('allowlist_screen_list', 'allowlist_screen_list', $current['listId'], _("No screening"));
-            $stale = $current['stale'] ? '<div class="alert alert-warning">' . _("This route points at an allowlist that no longer exists, so calls on it are not screened. Choose a list and submit to screen it again.") . '</div>' : '';
+            $select = allowlist_list_select_html('allowlist_screen_list', 'allowlist_screen_list', $current['stale'] ? 'choose' : $current['listId'], _("No screening"), $current['stale'] ? _("Choose a list") : null);
+            $stale = $current['stale'] ? '<div class="alert alert-warning">' . _("This route points at an allowlist that no longer exists, so calls on it are not screened. Choose a list, or No screening, and submit.") . '</div>' : '';
             $html= '
                 <!--allowlist hook -->
                 <!--Allowlist used to screen this Route-->
@@ -290,14 +290,22 @@ function allowlist_hook_requested_autoadd_list($request) {
     return 1;
 }
 
-/* Every list name goes through formatListNameForDisplay(); ids are cast to int. */
-function allowlist_list_select_html($name, $id, $selected, $noneLabel) {
+/*
+ * Every list name goes through formatListNameForDisplay(); ids are cast to int.
+ * $chooseLabel adds a preselected "choose" placeholder for a route whose saved
+ * list was deleted. Its value is not a list id, so didAdd() rejects it and an
+ * unrelated save keeps the stale mapping (and its warning) instead of clearing it.
+ */
+function allowlist_list_select_html($name, $id, $selected, $noneLabel, $chooseLabel = null) {
     $html = '<select class="form-control" name="' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '" id="' . htmlspecialchars($id, ENT_QUOTES, 'UTF-8') . '">';
+    if ($chooseLabel !== null) {
+        $html .= '<option value="choose"' . ($selected === 'choose' ? ' selected' : '') . '>' . htmlspecialchars($chooseLabel, ENT_QUOTES, 'UTF-8') . '</option>';
+    }
     if ($noneLabel !== null) {
         $html .= '<option value=""' . ($selected === false ? ' selected' : '') . '>' . htmlspecialchars($noneLabel, ENT_QUOTES, 'UTF-8') . '</option>';
     }
     foreach (FreePBX::Allowlist()->listGetAll() as $listId => $listName) {
-        $html .= '<option value="' . (int)$listId . '"' . ($selected !== false && (int)$selected === (int)$listId ? ' selected' : '') . '>' . \FreePBX\modules\Allowlist::formatListNameForDisplay($listName) . '</option>';
+        $html .= '<option value="' . (int)$listId . '"' . ($selected !== false && $selected !== 'choose' && (int)$selected === (int)$listId ? ' selected' : '') . '>' . \FreePBX\modules\Allowlist::formatListNameForDisplay($listName) . '</option>';
     }
     return $html . '</select>';
 }

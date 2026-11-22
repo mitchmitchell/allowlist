@@ -1818,7 +1818,11 @@ check(allowlistUnitSelected(allowlist_hook_core('5550130/2025550100', 'did'), 'a
 $h = allowlist_hook_core('5550140/', 'did');
 check(allowlistUnitSelected($h, 'allowlist_screen_list') === array('') && strpos($h, 'alert-warning') === false, 'unscreened route preselects No screening with no warning');
 $h = allowlist_hook_core('5550120/', 'did');
-check(allowlistUnitSelected($h, 'allowlist_screen_list') === array('') && strpos($h, 'alert-warning') !== false, 'route pointing at a missing list shows unscreened with a warning');
+check(allowlistUnitSelected($h, 'allowlist_screen_list') === array('choose') && strpos($h, 'alert-warning') !== false && strpos($h, '<option value="">No screening</option>') !== false, 'route pointing at a missing list preselects Choose a list with a warning, and still offers No screening');
+$w = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, array('action' => 'edtIncoming', 'extdisplay' => '5550120/', 'extension' => '5550120', 'cidnum' => '', 'allowlist_screen_list' => 'choose'));
+check($fp->astman->db['/allowlist/did/5550120'] === '99' && count($fp->Notifications->warnings) === $w + 1, 'saving an inbound route left on Choose a list is rejected and keeps the stale mapping');
+check(allowlistUnitSelected(allowlist_hook_core('5550120/', 'did'), 'allowlist_screen_list') === array('choose'), 'the stale warning survives an unrelated save');
 
 $fp->astman->db['/allowlist/autoadd/5'] = '1,1,10,3';
 $h = allowlist_hook_core('5', 'routing');
