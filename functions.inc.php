@@ -50,8 +50,9 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
             $autoadd = allowlist_route_get($viewing_itemid);
             $remcount = allowlist_route_remcount($viewing_itemid);
             $stocount = allowlist_route_stocount($viewing_itemid);
-            $routeListId = allowlist_route_list_id($viewing_itemid);
-            $routeSelect = allowlist_list_select_html('autoadd_allowlist_list', 'autoadd_allowlist_list', $routeListId === false ? 1 : $routeListId, null);
+            $routeState = allowlist_route_list_state($viewing_itemid);
+            $routeSelect = allowlist_list_select_html('autoadd_allowlist_list', 'autoadd_allowlist_list', $routeState['stale'] ? false : $routeState['listId'], $routeState['stale'] ? _("Choose a list") : null);
+            $routeStale = $routeState['stale'] ? '<div class="alert alert-warning">' . _("This route adds numbers to an allowlist that no longer exists, so nothing is being added. Choose a list, or turn auto-add off, and submit.") . '</div>' : '';
             $html= '
                 <!--allowlist hook -->
                 <!--Automatically add Outbound Callers to Allowlist on Route-->
@@ -88,6 +89,11 @@ function allowlist_hook_core($viewing_itemid, $target_menuid) {
                                         <label class="sr-only" for="autoadd_allowlist_list">'. _("Add to list").'</label>
                                         '. $routeSelect .'
                                     </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    '. $routeStale .'
                                 </div>
                             </div>
                         </div>
@@ -267,12 +273,18 @@ function allowlist_hook_requested_screen_list($request) {
     if (array_key_exists('allowlist_screen_list', $request)) {
         return $request['allowlist_screen_list'] === '' ? null : $request['allowlist_screen_list'];
     }
-    return (isset($request['enable_allowlist']) && $request['enable_allowlist'] == 'yes') ? 1 : null;
+    return (isset($request['enable_allowlist']) && $request['enable_allowlist'] === 'yes') ? 1 : null;
 }
 
-/* Target list for outbound auto-add; Default when the form does not send one. */
+/*
+ * Target list for outbound auto-add; Default only when the form does not send
+ * the field at all (pre-17.0.2 forms). A posted empty value is passed through so
+ * routeAdd() rejects it: that is the "Choose a list" placeholder shown when the
+ * saved target list was deleted, and saving it must not silently move auto-add
+ * to Default.
+ */
 function allowlist_hook_requested_autoadd_list($request) {
-    if (array_key_exists('autoadd_allowlist_list', $request) && $request['autoadd_allowlist_list'] !== '') {
+    if (array_key_exists('autoadd_allowlist_list', $request)) {
         return $request['autoadd_allowlist_list'];
     }
     return 1;
@@ -280,7 +292,7 @@ function allowlist_hook_requested_autoadd_list($request) {
 
 /* Every list name goes through formatListNameForDisplay(); ids are cast to int. */
 function allowlist_list_select_html($name, $id, $selected, $noneLabel) {
-    $html = '<select class="form-control" name="' . $name . '" id="' . $id . '">';
+    $html = '<select class="form-control" name="' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '" id="' . htmlspecialchars($id, ENT_QUOTES, 'UTF-8') . '">';
     if ($noneLabel !== null) {
         $html .= '<option value=""' . ($selected === false ? ' selected' : '') . '>' . htmlspecialchars($noneLabel, ENT_QUOTES, 'UTF-8') . '</option>';
     }
@@ -311,8 +323,21 @@ function allowlist_did_list_state($did) {
     return array('listId' => $listId, 'stale' => false);
 }
 
-function allowlist_route_list_id($route_id) {
-    return FreePBX::Allowlist()->routeGetListId($route_id);
+/*
+ * Auto-add target of the outbound route being viewed: Default when auto-add is
+ * off or the value has no 4th field. stale is true when an autoadd/ key exists
+ * but its list is missing or unparseable; the AGI skips those routes.
+ */
+function allowlist_route_list_state($route_id) {
+    $allowlist = FreePBX::Allowlist();
+    if (!$allowlist->routeIsSet($route_id)) {
+        return array('listId' => 1, 'stale' => false);
+    }
+    $listId = $allowlist->routeGetListId($route_id);
+    if ($listId === false || !$allowlist->listExists($listId)) {
+        return array('listId' => false, 'stale' => true);
+    }
+    return array('listId' => $listId, 'stale' => false);
 }
 
 function allowlist_inbound_screen_list_id($did, $cid) {

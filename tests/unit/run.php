@@ -1826,6 +1826,22 @@ check(allowlistUnitSelected($h, 'autoadd_allowlist_list') === array('3') && strp
 check(strpos($h, '<img') === false && strpos($h, 'Tom &amp; Jerry &quot;x&quot;') !== false, 'outbound hook escapes list names');
 check(allowlistUnitSelected(allowlist_hook_core('1', 'routing'), 'autoadd_allowlist_list') === array('1'), 'outbound route without a 4th field preselects Default');
 check(allowlistUnitSelected(allowlist_hook_core('6', 'routing'), 'autoadd_allowlist_list') === array('1'), 'outbound route without auto-add preselects Default');
+$fp->astman->db['/allowlist/autoadd/11'] = '1,0,10,42';
+$h = allowlist_hook_core('11', 'routing');
+check(allowlistUnitSelected($h, 'autoadd_allowlist_list') === array('') && strpos($h, 'alert-warning') !== false && strpos($h, '<option value="" selected>Choose a list</option>') !== false, 'outbound route targeting a deleted list shows a warning and preselects Choose a list, not Default');
+$fp->astman->db['/allowlist/autoadd/12'] = '1,0,10,x';
+check(allowlistUnitSelected(allowlist_hook_core('12', 'routing'), 'autoadd_allowlist_list') === array('') && strpos(allowlist_hook_core('12', 'routing'), 'alert-warning') !== false, 'outbound route with an unparseable auto-add value is flagged as stale');
+$h = allowlist_hook_core('5', 'routing');
+check(strpos($h, 'alert-warning') === false && strpos($h, 'Choose a list') === false, 'outbound route with a valid list shows no warning or placeholder');
+foreach (array('5550110/' => 'did', '5550120/' => 'did', '5' => 'routing', '11' => 'routing') as $hookId => $hookMenu) {
+	$h = allowlist_hook_core($hookId, $hookMenu);
+	check(substr_count($h, '<div') === substr_count($h, '</div>'), "$hookMenu hook $hookId has balanced div tags");
+}
+$w = count($fp->Notifications->warnings);
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '11', 'autoadd_allowlist' => 'yes', 'remcount' => '0', 'stocount' => '10', 'autoadd_allowlist_list' => ''));
+check($fp->astman->db['/allowlist/autoadd/11'] === '1,0,10,42' && count($fp->Notifications->warnings) === $w + 1, 'saving the Choose a list placeholder is rejected and does not retarget auto-add to Default');
+allowlist_hookProcess_core(null, array('action' => 'editroute', 'id' => '11', 'autoadd_allowlist' => 'no', 'autoadd_allowlist_list' => ''));
+check(!isset($fp->astman->db['/allowlist/autoadd/11']), 'turning auto-add off on a stale route removes it');
 
 $warn = count($fp->Notifications->warnings);
 allowlist_hookProcess_core(null, array('action' => 'addIncoming', 'extension' => '5550150', 'cidnum' => '', 'allowlist_screen_list' => '2'));
