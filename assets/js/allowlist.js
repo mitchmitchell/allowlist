@@ -240,7 +240,8 @@ function alListRequest(post_data) {
 		if (data.status) {
 			window.location.reload();
 		} else {
-			fpbxToast(data.message, '', 'error');
+			/* fpbxToast renders HTML; listDelete's message can carry route ids read from AstDB. */
+			fpbxToast(alEscapeHtml(data.message), '', 'error');
 		}
 	})
 	.fail(function() {

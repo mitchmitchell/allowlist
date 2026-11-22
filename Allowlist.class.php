@@ -3112,13 +3112,18 @@ class Allowlist implements BMO
     }
 
     /**
-     * Hand the number to the Blacklist module. Only an explicit false counts as a
-     * failure: Blacklist::numberAdd() has returned nothing in some releases, and
-     * treating that as failure would make blocking impossible there.
+     * Hand the number to the Blacklist module and confirm it landed before the
+     * caller removes it from the allowlist. Upstream Blacklist::numberAdd()
+     * (release/15.0-17.0) ignores its own database_put result and always returns
+     * the number, so its return value alone cannot show a failed write: the
+     * blacklist/<number> key is read back instead. An explicit false is still
+     * treated as failure in case a later release starts reporting one.
      */
     private function blockViaBlacklist($number, $desc)
     {
-        if ($this->FreePBX->Blacklist->numberAdd(array('number' => $number, 'description' => $desc)) === false)
+        $added = $this->FreePBX->Blacklist->numberAdd(array('number' => $number, 'description' => $desc));
+        $stored = $added === false ? false : $this->astman->database_get('blacklist', (string)$number);
+        if ($stored === false || $stored === null || $stored === '')
         {
             $this->lastError = _('The Blacklist module did not accept the number, so it was left on the allowlist.');
             return false;

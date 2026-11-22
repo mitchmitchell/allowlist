@@ -84,7 +84,21 @@ namespace {
 			return $out;
 		}
 	}
-	class FakeBlacklist { public $added = array(); public function numberAdd($post) { $this->added[] = $post; return true; } }
+	// Mirrors upstream Blacklist::numberAdd() (release/15.0-17.0): it writes blacklist/<number>, ignores the
+	// database_put result and returns the number. $skipWrite models a DBPut that AMI rejected.
+	class FakeBlacklist {
+		public $added = array();
+		public $skipWrite = false;
+		private $astman;
+		public function __construct($astman = null) { $this->astman = $astman; }
+		public function numberAdd($post) {
+			$this->added[] = $post;
+			if (!$this->skipWrite && $this->astman !== null) {
+				$this->astman->database_put('blacklist', $post['number'], $post['description']);
+			}
+			return $post['number'];
+		}
+	}
 	class FakeDestinations {
 		public function getAllDestinations() {
 			return array('tst-blocked,s,1' => array('description' => 'TST blocked'), 'app-blackhole,hangup,1' => array('description' => 'Hangup'));
@@ -99,7 +113,7 @@ namespace {
 		public $astman, $Blacklist, $Destinations, $Config, $Allowlist;
 		public function __construct() {
 			$this->astman = new FakeAstman();
-			$this->Blacklist = new FakeBlacklist();
+			$this->Blacklist = new FakeBlacklist($this->astman);
 			$this->Destinations = new FakeDestinations();
 			$this->Config = new FakeConfig(array(
 				'ASTSPOOLDIR' => sys_get_temp_dir(),

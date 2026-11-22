@@ -1910,7 +1910,7 @@ $editRaceCalls = 0;
 $editRacePeerDeleted = false;
 $al->testBeforeListMutationLockAcquire = function ($me) use ($fp, $editRaceLock, &$editRaceCalls, &$editRacePeerDeleted) {
 	$editRaceCalls++;
-	if ($editRaceCalls !== 2) {
+	if ($editRaceCalls < 2) {
 		return;
 	}
 	$probe = fopen($editRaceLock, 'c+');
@@ -1938,14 +1938,18 @@ allowlistUnitUnlinkIfExists($editRaceLock);
 list($fp, $al) = fresh();
 $fp->astman->db['/allowlist-lists/2'] = 'Kids';
 $fp->astman->db['/allowlist-list/2/2025550210'] = 'k';
+$fp->Blacklist->skipWrite = true;
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']) && !isset($fp->astman->db['/blacklist/2025550210']) && strpos($r['message'], 'Blacklist') !== false, 'block on a named list keeps the number when the blacklist write did not land (upstream still returns the number)');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']) && !isset($fp->astman->db['/blacklist/2025550113']), 'block on Default keeps the number when the blacklist write did not land');
+$fp->Blacklist->skipWrite = false;
 $fp->Blacklist = new class { public $added = array(); public function numberAdd($post) { $this->added[] = $post; return false; } };
 $r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
-check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']) && strpos($r['message'], 'Blacklist') !== false, 'block on a named list keeps the number when the Blacklist rejects it');
-$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
-check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'block on Default keeps the number when the Blacklist rejects it');
-$fp->Blacklist = new class { public $added = array(); public function numberAdd($post) { $this->added[] = $post; } };
-$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
-check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550210']) && count($fp->Blacklist->added) === 1, 'a Blacklist numberAdd that returns nothing still blocks');
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']), 'block keeps the number when numberAdd reports false');
+$fp->Blacklist = new FakeBlacklist($fp->astman);
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'description' => 'spam', 'listId' => '2'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550210']) && $fp->astman->db['/blacklist/2025550210'] === 'spam', 'block moves a named-list number to the blacklist when the write lands');
 
 list($fp, $al) = fresh();
 $countingAstman = new class extends FakeAstman { public $shows = 0; public function database_show($fam) { $this->shows++; return parent::database_show($fam); } };
@@ -1968,6 +1972,7 @@ check($byId[5]['inboundRoutes'] === array('5550505') && $byId[5]['outboundRoutes
 check($al->listRoutesUsingList(5) === array('inbound' => array('5550505'), 'outbound' => array('12')) && $al->listRoutesUsingList(9) === array('inbound' => array(), 'outbound' => array()), 'listRoutesUsingList matches the summary');
 
 $js = file_get_contents($root . '/assets/js/allowlist.js');
+check(preg_match('/function alListRequest[\s\S]*?fpbxToast\(alEscapeHtml\(data\.message\)/', $js) === 1 && preg_match('/function alListRequest[\s\S]*?fpbxToast\(data\.message/', substr($js, strpos($js, 'function alListRequest'), 600)) === 0, 'Lists tab error toast escapes the server message (fpbxToast renders HTML)');
 check(strpos($js, ".data('list-") === false && substr_count($js, ".attr('data-list-name')") === 2, 'Lists tab JS reads list names with .attr(), never type-coercing .data()');
 $pot = file_get_contents($root . '/i18n/allowlist.pot');
 $missing = array();
