@@ -17,7 +17,7 @@ class Allowlist implements BMO
     /** L8: shortest stored-number length the auto-add route may keep. */
     const AUTOADD_MIN_STOCOUNT = 7;
     /** Commands that change state: a valid CSRF token is required (M3). */
-    const CSRF_COMMANDS = array('add', 'edit', 'del', 'block', 'pause', 'bulkdelete');
+    const CSRF_COMMANDS = array('add', 'edit', 'del', 'block', 'pause', 'bulkdelete', 'listcreate', 'listrename', 'listdelete');
     /** Longest pause any path may set (seconds). */
     const PAUSE_MAX_SECS = 86400;
     const RESERVED_PREFIXES = array('did/', 'autoadd/');
@@ -1212,6 +1212,9 @@ class Allowlist implements BMO
             case 'bulkdelete':
             case 'getJSON':
             case 'calllog':
+            case 'listcreate':
+            case 'listrename':
+            case 'listdelete':
                 return true;
             break;
         }
@@ -1261,9 +1264,25 @@ class Allowlist implements BMO
         {
             $_REQUEST['command'] = 'edit';
         }
+        $listCommands = array('add', 'edit', 'del', 'block', 'bulkdelete', 'getJSON');
+        $listId = self::DEFAULT_LIST_ID;
+        if (in_array($_REQUEST['command'], $listCommands, true))
+        {
+            $listId = $this->ajaxListIdArg($request, 'listId');
+            if ($listId === false)
+            {
+                return array('status' => false, 'message' => _('Unknown allowlist.'));
+            }
+        }
         switch ($_REQUEST['command'])
         {
             case 'add':
+                if ($listId !== self::DEFAULT_LIST_ID)
+                {
+                    return $this->listMemberAdd($listId, $request)
+                        ? array('status' => true)
+                        : array('status' => false, 'message' => $this->lastError);
+                }
                 if (!$this->numberAdd($request))
                 {
                     return array('status' => false, 'message' => $this->lastError);
@@ -1273,6 +1292,17 @@ class Allowlist implements BMO
                 );
             break;
             case 'edit':
+                $oldListId = array_key_exists('oldlistId', $request) ? $this->ajaxListIdArg($request, 'oldlistId') : $listId;
+                if ($oldListId === false)
+                {
+                    return array('status' => false, 'message' => _('Unknown allowlist.'));
+                }
+                if ($oldListId !== self::DEFAULT_LIST_ID || $listId !== self::DEFAULT_LIST_ID)
+                {
+                    return $this->listMemberEdit($oldListId, isset($request['oldval']) ? $request['oldval'] : null, $listId, $request)
+                        ? array('status' => true)
+                        : array('status' => false, 'message' => $this->lastError);
+                }
                 // Validate the new entry before touching the old one.
                 if (!$this->checkEntry($request))
                 {
@@ -1295,10 +1325,10 @@ class Allowlist implements BMO
                 }
                 $rejected = array();
                 $deleted = 0;
-                $list = $this->getAllowlist(); // L2: one AMI listing per request
+                $list = $this->listMemberGetAll($listId); // L2: one AMI listing per request
                 foreach ($numbers as $number)
                 {
-                    if ($this->numberDel($number, $list))
+                    if ($listId === self::DEFAULT_LIST_ID ? $this->numberDel($number, $list) : ($this->isListMember($listId, $number, $list) && $this->listMemberDel($listId, $number)))
                     {
                         $deleted++;
                     }
@@ -1323,11 +1353,21 @@ class Allowlist implements BMO
                 );
             break;
             case 'del':
-                $ret = $this->numberDel(isset($request['number']) ? $request['number'] : null);
+                $number = isset($request['number']) ? $request['number'] : null;
+                if ($listId !== self::DEFAULT_LIST_ID)
+                {
+                    if (!$this->isListMember($listId, $number))
+                    {
+                        return array('status' => false, 'message' => _('Not an allowlist number.'));
+                    }
+                    $ret = $this->listMemberDel($listId, $number);
+                    return $ret ? array('status' => $ret) : array('status' => false, 'message' => $this->lastError);
+                }
+                $ret = $this->numberDel($number);
                 return $ret ? array('status' => $ret) : array('status' => false, 'message' => $this->lastError);
             break;
             case 'block':
-                $ret = $this->numberBlock($request);
+                $ret = $this->listMemberBlock($listId, $request);
                 return $ret ? array('status' => $ret) : array('status' => false, 'message' => $this->lastError);
             break;
             case 'pause':
@@ -1349,6 +1389,10 @@ class Allowlist implements BMO
                 switch ($request['jdata'])
                 {
                     case 'grid':
+                        if ($listId !== self::DEFAULT_LIST_ID)
+                        {
+                            return $this->listMemberGetAll($listId);
+                        }
                         $ret = array();
                         $allowlist = $this->getAllowlist();
                         foreach ($allowlist as $item)
@@ -1376,7 +1420,37 @@ class Allowlist implements BMO
                     break;
                 }
             break;
+            case 'listcreate':
+                $created = $this->listCreate(isset($request['name']) ? $request['name'] : null);
+                return $created === false
+                    ? array('status' => false, 'message' => $this->lastError)
+                    : array('status' => true, 'listId' => $created);
+            break;
+            case 'listrename':
+                return $this->listRename(isset($request['listId']) ? $request['listId'] : null, isset($request['name']) ? $request['name'] : null)
+                    ? array('status' => true)
+                    : array('status' => false, 'message' => $this->lastError);
+            break;
+            case 'listdelete':
+                return $this->listDelete(isset($request['listId']) ? $request['listId'] : null)
+                    ? array('status' => true)
+                    : array('status' => false, 'message' => $this->lastError);
+            break;
         }
+    }
+
+    private function ajaxListIdArg($request, $field)
+    {
+        if (!isset($request[$field]) || $request[$field] === '')
+        {
+            return self::DEFAULT_LIST_ID;
+        }
+        $id = self::parseListIdValue($request[$field]);
+        if ($id === false || !$this->listExists($id))
+        {
+            return false;
+        }
+        return $id;
     }
 
     //BMO Methods
@@ -1877,15 +1951,25 @@ class Allowlist implements BMO
         $filter_knowncallers = $this->allowknowncallersGet() == 1;
         $pause = $this->pauseGet() != 0;
         $view = isset($_REQUEST['view']) ? $_REQUEST['view'] : '';
+        $lists = $this->summarizeAllowlistsForGraphql();
+        $listId = $this->ajaxListIdArg($_REQUEST, 'listId');
+        if ($listId === false)
+        {
+            $listId = self::DEFAULT_LIST_ID;
+        }
         switch ($view)
         {
             case 'grid':
                 return load_view(__DIR__ . '/views/algrid.php', array(
-                    'allowlist' => $allowlistitems
+                    'allowlist' => $allowlistitems,
+                    'lists' => $lists,
+                    'listId' => $listId
                 ));
             default:
                 return load_view(__DIR__ . '/views/general.php', array(
                     'allowlist' => $allowlistitems,
+                    'lists' => $lists,
+                    'listId' => $listId,
                     'destination' => $destination,
                     'filter_knowncallers' => $filter_knowncallers,
                     'pause' => $pause,
@@ -2844,6 +2928,137 @@ class Allowlist implements BMO
             );
         }
         return $rows;
+    }
+
+    private static function listMemberStoreKey($listId, $number)
+    {
+        if ($listId === self::DEFAULT_LIST_ID)
+        {
+            return array('allowlist', $number);
+        }
+        return array('allowlist-list', $listId . '/' . $number);
+    }
+
+    public function isListMember($listId, $number, $members = null)
+    {
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            return false;
+        }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            return $this->isDeletableNumber($number, $members);
+        }
+        if (!is_string($number) || self::normalizeNumber($number) !== $number)
+        {
+            return false;
+        }
+        return self::findInList(is_array($members) ? $members : $this->listMemberGetAll($id), $number) !== null;
+    }
+
+    /**
+     * Replace a member, optionally moving it to another list. Same ordering as
+     * numberEdit(): write the new entry first, then delete the old one, and if
+     * the delete fails restore the new key's prior value so the edit is
+     * all-or-nothing. Not wrapped in the list-mutation lock because
+     * listMemberAdd()/listMemberDel() each take it and the lock is not reentrant.
+     */
+    public function listMemberEdit($oldListId, $oldval, $newListId, $post)
+    {
+        $this->lastError = '';
+        $from = self::parseListIdValue($oldListId);
+        $to = self::parseListIdValue($newListId);
+        if ($from === false || $to === false)
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        if ($from === self::DEFAULT_LIST_ID && $to === self::DEFAULT_LIST_ID)
+        {
+            return $this->numberEdit($oldval, $post);
+        }
+        $entry = $this->checkEntry($post);
+        if (!$entry)
+        {
+            return false;
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        if (!$this->listExists($from) || !$this->listExists($to))
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        if (!$this->isListMember($from, $oldval))
+        {
+            $this->lastError = _('The number being edited is not an allowlist number; nothing was changed.');
+            return false;
+        }
+        list($family, $key) = self::listMemberStoreKey($to, $entry['number']);
+        $prior = $this->astman->database_get($family, $key);
+        if (!$this->listMemberAdd($to, $post))
+        {
+            return false;
+        }
+        if ($from === $to && $oldval === $entry['number'])
+        {
+            return true;
+        }
+        if (!$this->listMemberDel($from, $oldval))
+        {
+            if ($prior === false || $prior === null || $prior === '')
+            {
+                $restored = $this->astman->database_del($family, $key);
+            }
+            else
+            {
+                $restored = $this->astman->database_put($family, $key, $prior);
+            }
+            if (!$restored)
+            {
+                $this->lastError = sprintf(_('Could not remove the old number, and undoing the edit also failed: %s may still be on the allowlist alongside %s. Check both entries.'), $entry['number'], $oldval);
+                return false;
+            }
+            $this->lastError = _('Could not remove the old number: the Asterisk database rejected the delete; nothing was changed.');
+            return false;
+        }
+        return true;
+    }
+
+    public function listMemberBlock($listId, $post)
+    {
+        $this->lastError = '';
+        $id = self::parseListIdValue($listId);
+        if ($id === false)
+        {
+            $this->lastError = _('Unknown allowlist.');
+            return false;
+        }
+        if ($id === self::DEFAULT_LIST_ID)
+        {
+            return $this->numberBlock($post);
+        }
+        if (!$this->astman->connected())
+        {
+            throw new RuntimeException(_('Cannot connect to Asterisk Manager, is Asterisk running?'));
+        }
+        $number = is_array($post) && isset($post['number']) ? $post['number'] : null;
+        if (!$this->isListMember($id, $number))
+        {
+            $this->lastError = _('Not an allowlist number.');
+            return false;
+        }
+        $desc = self::normalizeDescription(isset($post['description']) ? $post['description'] : null);
+        if ($desc === false)
+        {
+            $this->lastError = _('Description must be at most 255 characters with no control characters.');
+            return false;
+        }
+        $this->FreePBX->Blacklist->numberAdd(array('number' => $number, 'description' => $desc));
+        return $this->listMemberDel($id, $number);
     }
 
     private function nextAvailableListId($lists)

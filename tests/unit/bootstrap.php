@@ -5,6 +5,15 @@ namespace {
 	if (!function_exists('_')) {
 		function _($s) { return $s; }
 	}
+	if (!function_exists('load_view')) {
+		// Same contract as FreePBX's load_view(): extract the variables, include the view, return its output.
+		function load_view($view_filename_protected, $vars = array()) {
+			extract($vars);
+			ob_start();
+			include $view_filename_protected;
+			return ob_get_clean();
+		}
+	}
 	class ext_gosub {
 		public $args;
 		private $pri;
