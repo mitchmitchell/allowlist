@@ -17,4 +17,6 @@ jobs:
       - name: PHP unit tests (no FreePBX needed)
         run: php tests/unit/run.php
       - name: JS unit tests
-        run: node tests/unit/algrid.test.js
+        run: |
+          node tests/unit/algrid.test.js
+          node tests/unit/allowlist_js.test.js

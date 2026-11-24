@@ -1826,6 +1826,10 @@ $r = ajax($al, array('command' => 'listcreate', 'name' => 'Family'));
 check($r['status'] === true && $r['listId'] === 2 && $fp->astman->db['/allowlist-lists/2'] === 'Family', 'AJAX listcreate stores the name raw and returns the id');
 $r = ajax($al, array('command' => 'listcreate', 'name' => "bad/name"));
 check($r['status'] === false && $r['message'] !== '', 'AJAX listcreate rejects an invalid name with a message');
+$r = ajax($al, array('command' => 'listrename', 'listId' => '2', 'name' => 'Stolen', 'token' => 'bogus'));
+check($r['status'] === false && $fp->astman->db['/allowlist-lists/2'] === 'Family', 'listrename with a bad token renames nothing');
+$r = ajax($al, array('command' => 'listdelete', 'listId' => '2', 'token' => 'bogus'));
+check($r['status'] === false && $fp->astman->db['/allowlist-lists/2'] === 'Family', 'listdelete with a bad token deletes nothing');
 $r = ajax($al, array('command' => 'listrename', 'listId' => '2', 'name' => 'Kin'));
 check($r['status'] === true && $fp->astman->db['/allowlist-lists/2'] === 'Kin', 'AJAX listrename');
 $r = ajax($al, array('command' => 'listrename', 'listId' => '9', 'name' => 'X'));
@@ -1850,6 +1854,10 @@ check(is_array($grid) && $grid['status'] === false, 'AJAX grid for an unknown li
 
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550190', 'oldlistId' => '2', 'number' => '2025550194', 'description' => 'kid2', 'listId' => '2'));
 check($r['status'] === true && isset($fp->astman->db['/allowlist-list/2/2025550194']) && !isset($fp->astman->db['/allowlist-list/2/2025550190']), 'AJAX edit within a named list replaces the entry');
+$fp->astman->db['/allowlist-list/2/2025550199'] = 'before';
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550199', 'oldlistId' => '2', 'number' => '2025550199', 'description' => 'after', 'listId' => '2'));
+check($r['status'] === true && isset($fp->astman->db['/allowlist-list/2/2025550199']) && $fp->astman->db['/allowlist-list/2/2025550199'] === 'after', 'AJAX description-only edit on a named list keeps the member with the new description');
+unset($fp->astman->db['/allowlist-list/2/2025550199']);
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550194', 'oldlistId' => '2', 'number' => '2025550194', 'description' => 'moved', 'listId' => '1'));
 check($r['status'] === true && $fp->astman->db['/allowlist/2025550194'] === 'moved' && !isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX edit moves a number from a named list to Default');
 $r = ajax($al, array('command' => 'add', 'oldval' => '2025550194', 'oldlistId' => '1', 'number' => '2025550194', 'description' => 'back', 'listId' => '2'));
