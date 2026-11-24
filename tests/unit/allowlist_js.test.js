@@ -12,13 +12,15 @@ const pageJs = fs.readFileSync(path.join(root, 'assets/js/allowlist.js'), 'utf8'
 const gridScript = fs.readFileSync(path.join(root, 'views/algrid.php'), 'utf8')
 	.match(/<script type="text\/javascript">([\s\S]*?)<\/script>/)[1];
 
-// jQuery's .data() converts "1e3" to 1000, "true" to true, JSON to objects; .attr() never does.
+// Same rules as jQuery 3's getData(): "true"/"false"/"null", numbers only when they round-trip
+// exactly (so "1000" -> 1000 but "0123", "1e3" and "+1202..." stay strings), and JSON-looking
+// strings are parsed. .attr() never converts.
 function jqDataCoerce(v) {
 	if (v === undefined || v === null) return v;
 	if (v === 'true') return true;
 	if (v === 'false') return false;
 	if (v === 'null') return null;
-	if (String(+v) === v || (/^[+-]?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(v) && !isNaN(+v))) return +v;
+	if (v === String(+v)) return +v;
 	if (/^(?:\{[\w\W]*\}|\[[\w\W]*\])$/.test(v)) { try { return JSON.parse(v); } catch (e) { return v; } }
 	return v;
 }
@@ -207,14 +209,29 @@ t('list request failure shows a plain error toast', () => {
 	p.failReq(p.lastPost());
 	const toast = p.toasts.pop();
 	assert.strictEqual(toast.level, 'error');
+	assert.strictEqual(toast.msg, 'The request failed; reload the page and try again.');
 	assert.strictEqual(p.reloads, 0);
 });
 
+t('stand-in coerces exactly like jQuery 3 .data()', () => {
+	assert.strictEqual(jqDataCoerce('1000'), 1000);
+	assert.strictEqual(jqDataCoerce('true'), true);
+	assert.deepStrictEqual(jqDataCoerce('[1,2]'), [1, 2]);
+	for (const keep of ['0123', '1e3', '1.50', '+12025550100', '007', 'Kids']) {
+		assert.strictEqual(jqDataCoerce(keep), keep, keep + ' stays a string');
+	}
+});
+
 t('rename prefills the stored name as a string, never type-coerced', () => {
+	for (const name of ['1000', 'true', '[1,2]']) {
+		const p = makePage();
+		p.setPrompt('New');
+		p.clickDelegated('[data-list-action="rename"]', p.el('ren', { 'data-list-id': '7', 'data-list-name': name }));
+		assert.strictEqual(p.prompts.pop().def, name);
+	}
 	const p = makePage();
 	p.setPrompt('New');
-	p.clickDelegated('[data-list-action="rename"]', p.el('ren', { 'data-list-id': '7', 'data-list-name': '1e3' }));
-	assert.strictEqual(p.prompts.pop().def, '1e3');
+	p.clickDelegated('[data-list-action="rename"]', p.el('ren', { 'data-list-id': '7', 'data-list-name': 'Kids' }));
 	const d = p.lastPost().data;
 	assert.deepStrictEqual([d.command, d.listId, d.name], ['listrename', '7', 'New']);
 });

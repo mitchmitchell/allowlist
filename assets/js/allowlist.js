@@ -231,7 +231,7 @@ $("#blkDelete").on("click", function(e) {
 /* Lists tab: create, rename and delete reload the page so the picker, the
    modal select and this table are all re-rendered (and re-escaped) server side.
    Names and ids are read with .attr(), not .data(): .data() type-coerces, so a
-   list named "1e3" would come back as the number 1000. */
+   list named "1000", "true" or "[1,2]" would come back as a number, boolean or array. */
 function alListRequest(post_data) {
 	post_data.module = 'allowlist';
 	post_data.token = allowlistCsrfToken();
