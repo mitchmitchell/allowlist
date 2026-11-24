@@ -1790,5 +1790,229 @@ try {
 check(!$hookThrew && count(array_filter($ext->splices, function ($s) { return $s['app'] === 'ext_gosub'; })) === 0, 'hookGet_config without AMI does not throw and emits no screening Gosub');
 check(strpos(implode("\n", $al->auditEntries), 'Asterisk Manager not connected') !== false && strpos(implode("\n", $al->auditEntries), '5550500') === false, 'AMI-down dialplan audit has no route numbers');
 
+// ---- PR-D1: allowlist page list picker, Lists tab, list-aware AJAX (#11)
+$evilNames = array('"><img src=x onerror=alert(1)>', '<script>alert(1)</script>', 'Tom & Jerry "x"');
+$viewLists = array();
+foreach ($evilNames as $i => $n) {
+	$viewLists[] = array('id' => $i + 2, 'name' => $n, 'memberCount' => 3, 'inboundRoutes' => $i === 0 ? array('<b>5550100/') : array(), 'outboundRoutes' => $i === 1 ? array('7"x') : array());
+}
+array_unshift($viewLists, array('id' => 1, 'name' => 'Default', 'memberCount' => 2, 'inboundRoutes' => array(), 'outboundRoutes' => array()));
+$gridHtml = load_view($root . '/views/algrid.php', array('allowlist' => array(), 'lists' => $viewLists, 'listId' => 3));
+$listsHtml = load_view($root . '/views/lists.php', array('lists' => $viewLists));
+$modalHtml = load_view($root . '/views/addnumber.php', array('lists' => $viewLists));
+foreach (array('list picker' => $gridHtml, 'Lists tab' => $listsHtml, 'add/edit list select' => $modalHtml) as $where => $html) {
+	check(strpos($html, '<img') === false && strpos($html, '<script>alert') === false && strpos($html, '<b>') === false, "$where: no raw markup from list names or routes");
+	check(preg_match('/="[^"]*"\s*on\w+=/', $html) !== 1 && strpos($html, '"><img') === false, "$where: list names cannot break out of an attribute");
+	check(strpos($html, Allowlist::formatListNameForDisplay($evilNames[0])) !== false && strpos($html, 'Tom &amp; Jerry &quot;x&quot;') !== false, "$where: list names rendered through formatListNameForDisplay");
+}
+check(Allowlist::formatListNameForDisplay('a"b<c>&') === 'a&quot;b&lt;c&gt;&amp;', 'formatListNameForDisplay escapes quote, angle brackets and ampersand');
+check(preg_match('/<option value="3" selected>/', $gridHtml) === 1 && substr_count($gridHtml, ' selected') === 1, 'picker preselects the requested list only');
+check(strpos($gridHtml, 'jdata=grid&listId=3"') !== false, 'grid data-url carries the selected list id');
+check(preg_match('/data-list-action="delete" data-list-id="1"[^>]*disabled/', $listsHtml) === 1, 'Lists tab: Default cannot be deleted');
+check(preg_match('/data-list-action="delete" data-list-id="2"[^>]*disabled/', $listsHtml) === 1 && preg_match('/data-list-action="delete" data-list-id="3"[^>]*disabled/', $listsHtml) === 1, 'Lists tab: delete disabled while a list is assigned to a route');
+check(preg_match('/data-list-action="delete" data-list-id="4"(?:(?!disabled)[^>])*>/', $listsHtml) === 1, 'Lists tab: unassigned list can be deleted');
+check(strpos($listsHtml, 'Inbound route &lt;b&gt;5550100/') !== false && strpos($listsHtml, 'Outbound route id 7&quot;x') !== false, 'Lists tab shows where each list is used, escaped');
+
+list($fp, $al) = fresh();
+$_SESSION = array();
+foreach (array('listcreate', 'listrename', 'listdelete') as $cmd) {
+	check(in_array($cmd, Allowlist::CSRF_COMMANDS, true), "$cmd requires the CSRF token");
+	$dummy = null;
+	check($al->ajaxRequest($cmd, $dummy) === true, "$cmd is an allowed AJAX command");
+}
+$r = ajax($al, array('command' => 'listcreate', 'name' => 'Family', 'token' => 'bogus'));
+check($r['status'] === false && !isset($fp->astman->db['/allowlist-lists/2']), 'listcreate with a bad token creates nothing');
+$r = ajax($al, array('command' => 'listcreate', 'name' => 'Family'));
+check($r['status'] === true && $r['listId'] === 2 && $fp->astman->db['/allowlist-lists/2'] === 'Family', 'AJAX listcreate stores the name raw and returns the id');
+$r = ajax($al, array('command' => 'listcreate', 'name' => "bad/name"));
+check($r['status'] === false && $r['message'] !== '', 'AJAX listcreate rejects an invalid name with a message');
+$r = ajax($al, array('command' => 'listrename', 'listId' => '2', 'name' => 'Stolen', 'token' => 'bogus'));
+check($r['status'] === false && $fp->astman->db['/allowlist-lists/2'] === 'Family', 'listrename with a bad token renames nothing');
+$r = ajax($al, array('command' => 'listdelete', 'listId' => '2', 'token' => 'bogus'));
+check($r['status'] === false && $fp->astman->db['/allowlist-lists/2'] === 'Family', 'listdelete with a bad token deletes nothing');
+$r = ajax($al, array('command' => 'listrename', 'listId' => '2', 'name' => 'Kin'));
+check($r['status'] === true && $fp->astman->db['/allowlist-lists/2'] === 'Kin', 'AJAX listrename');
+$r = ajax($al, array('command' => 'listrename', 'listId' => '9', 'name' => 'X'));
+check($r['status'] === false && !isset($fp->astman->db['/allowlist-lists/9']), 'AJAX listrename of an unknown list fails');
+
+$r = ajax($al, array('command' => 'add', 'number' => '2025550190', 'description' => 'kid', 'listId' => '2'));
+check($r['status'] === true && $fp->astman->db['/allowlist-list/2/2025550190'] === 'kid' && !isset($fp->astman->db['/allowlist/2025550190']), 'AJAX add with listId writes to the named list only');
+$r = ajax($al, array('command' => 'add', 'number' => '2025550191', 'listId' => '9'));
+check($r['status'] === false && !isset($fp->astman->db['/allowlist-list/9/2025550191']) && !isset($fp->astman->db['/allowlist/2025550191']), 'AJAX add to an unknown list is rejected and writes nothing');
+foreach (array('0', '-1', '1;Hangup', '2/../x', array('2')) as $badId) {
+	$r = ajax($al, array('command' => 'add', 'number' => '2025550192', 'listId' => $badId));
+	check($r['status'] === false && !isset($fp->astman->db['/allowlist/2025550192']), 'AJAX add rejects list id ' . json_encode($badId));
+}
+$r = ajax($al, array('command' => 'add', 'number' => '2025550193'));
+check($r['status'] === true && isset($fp->astman->db['/allowlist/2025550193']), 'AJAX add without listId still goes to Default');
+$grid = ajax($al, array('command' => 'getJSON', 'jdata' => 'grid', 'listId' => '2'));
+check($grid === array(array('number' => '2025550190', 'description' => 'kid')), 'AJAX grid with listId returns that list only');
+$grid = ajax($al, array('command' => 'getJSON', 'jdata' => 'grid'));
+check(in_array('2025550193', array_column($grid, 'number'), true) && !in_array('2025550190', array_column($grid, 'number'), true), 'AJAX grid without listId returns Default only');
+$grid = ajax($al, array('command' => 'getJSON', 'jdata' => 'grid', 'listId' => '9'));
+check(is_array($grid) && $grid['status'] === false, 'AJAX grid for an unknown list returns an error');
+
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550190', 'oldlistId' => '2', 'number' => '2025550194', 'description' => 'kid2', 'listId' => '2'));
+check($r['status'] === true && isset($fp->astman->db['/allowlist-list/2/2025550194']) && !isset($fp->astman->db['/allowlist-list/2/2025550190']), 'AJAX edit within a named list replaces the entry');
+$fp->astman->db['/allowlist-list/2/2025550199'] = 'before';
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550199', 'oldlistId' => '2', 'number' => '2025550199', 'description' => 'after', 'listId' => '2'));
+check($r['status'] === true && isset($fp->astman->db['/allowlist-list/2/2025550199']) && $fp->astman->db['/allowlist-list/2/2025550199'] === 'after', 'AJAX description-only edit on a named list keeps the member with the new description');
+unset($fp->astman->db['/allowlist-list/2/2025550199']);
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550194', 'oldlistId' => '2', 'number' => '2025550194', 'description' => 'moved', 'listId' => '1'));
+check($r['status'] === true && $fp->astman->db['/allowlist/2025550194'] === 'moved' && !isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX edit moves a number from a named list to Default');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550194', 'oldlistId' => '1', 'number' => '2025550194', 'description' => 'back', 'listId' => '2'));
+check($r['status'] === true && $fp->astman->db['/allowlist-list/2/2025550194'] === 'back' && !isset($fp->astman->db['/allowlist/2025550194']), 'AJAX edit moves a number from Default to a named list');
+$r = ajax($al, array('command' => 'add', 'oldval' => 'dest', 'oldlistId' => '1', 'number' => '2025550195', 'listId' => '2'));
+check($r['status'] === false && $fp->astman->db['/allowlist/dest'] === 'app-blackhole,hangup,1' && !isset($fp->astman->db['/allowlist-list/2/2025550195']), 'AJAX edit cannot move a settings key into a named list');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550113', 'oldlistId' => '2', 'number' => '2025550113', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']) && !isset($fp->astman->db['/allowlist-list/2/2025550113']), 'AJAX edit rejects an old number that is not on the stated list');
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550194', 'oldlistId' => '9', 'number' => '2025550196', 'listId' => '2'));
+check($r['status'] === false && !isset($fp->astman->db['/allowlist-list/2/2025550196']), 'AJAX edit with an unknown source list is rejected');
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550194', 'oldlistId' => '2', 'number' => '2025550197', 'listId' => '1'));
+$fp->astman->failDel = false;
+check($r['status'] === false && strpos($r['message'], 'undoing the edit also failed') !== false && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX move whose delete and rollback both fail says both entries may exist');
+unset($fp->astman->db['/allowlist/2025550197']);
+$fp->astman->db['/allowlist/2025550198'] = 'prior';
+$fp->astman->failDel = true;
+$r = ajax($al, array('command' => 'add', 'oldval' => '2025550194', 'oldlistId' => '2', 'number' => '2025550198', 'description' => 'new', 'listId' => '1'));
+$fp->astman->failDel = false;
+check($r['status'] === false && strpos($r['message'], 'nothing was changed') !== false, 'AJAX move with a failed delete reports nothing changed after rollback');
+check($fp->astman->db['/allowlist/2025550198'] === 'prior' && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'failed move restores the target key prior value and keeps the source entry');
+unset($fp->astman->db['/allowlist/2025550198']);
+
+$r = ajax($al, array('command' => 'del', 'number' => '2025550113', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'AJAX del on a named list never touches Default');
+$r = ajax($al, array('command' => 'del', 'number' => '2025550194', 'listId' => '2'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX del from a named list');
+$fp->astman->db['/allowlist-list/2/2025550180'] = 'a';
+$fp->astman->db['/allowlist-list/2/2025550181'] = 'b';
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode(array('2025550180', '2025550113', 'dest')), 'listId' => '2'));
+check($r['deleted'] === 1 && !isset($fp->astman->db['/allowlist-list/2/2025550180']) && isset($fp->astman->db['/allowlist/2025550113'], $fp->astman->db['/allowlist/dest']), 'AJAX bulkdelete on a named list deletes only its members');
+check(in_array('2025550113', $r['rejected'], true) && in_array('dest', $r['rejected'], true), 'AJAX bulkdelete on a named list reports non-members');
+$fp->Blacklist->added = array();
+$r = ajax($al, array('command' => 'block', 'number' => '2025550181', 'description' => 'spam', 'listId' => '2'));
+check($r['status'] === true && count($fp->Blacklist->added) === 1 && !isset($fp->astman->db['/allowlist-list/2/2025550181']), 'AJAX block from a named list blacklists and removes it');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113', 'listId' => '2'));
+check($r['status'] === false && count($fp->Blacklist->added) === 1 && isset($fp->astman->db['/allowlist/2025550113']), 'AJAX block on a named list rejects a non-member');
+
+$fp->astman->db['/allowlist/did/5550177/'] = '2';
+$r = ajax($al, array('command' => 'listdelete', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-lists/2']) && strpos($r['message'], '5550177') !== false, 'AJAX listdelete refuses an assigned list and names the route');
+unset($fp->astman->db['/allowlist/did/5550177/']);
+$r = ajax($al, array('command' => 'listdelete', 'listId' => '1'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'AJAX listdelete refuses Default');
+$fp->astman->db['/allowlist-list/2/2025550182'] = 'c';
+$r = ajax($al, array('command' => 'listdelete', 'listId' => '2'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist-lists/2']) && !isset($fp->astman->db['/allowlist-list/2/2025550182']), 'AJAX listdelete removes an unassigned list and its members');
+
+// ---- PR-D1 review follow-ups
+list($fp, $al) = freshHarness();
+$editRaceLock = sys_get_temp_dir() . '/allowlist-unit-editrace-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.lock';
+$al->testListMutationLockPath = $editRaceLock;
+check($al->listCreate('EditRace') === 2, 'edit race test creates list 2');
+$fp->astman->db['/allowlist-list/2/2025550101'] = 'prior';
+$fp->astman->db['/allowlist-list/2/2025550102'] = 'b';
+$fp->astman->failDel = false;
+$editRaceCalls = 0;
+$editRacePeerDeleted = false;
+$al->testBeforeListMutationLockAcquire = function ($me) use ($fp, $editRaceLock, &$editRaceCalls, &$editRacePeerDeleted) {
+	$editRaceCalls++;
+	if ($editRaceCalls < 2) {
+		return;
+	}
+	$probe = fopen($editRaceLock, 'c+');
+	if ($probe !== false && flock($probe, LOCK_EX | LOCK_NB)) {
+		foreach (array_keys($fp->astman->db) as $k) {
+			if ($k === '/allowlist-lists/2' || strpos($k, '/allowlist-list/2/') === 0) {
+				unset($fp->astman->db[$k]);
+			}
+		}
+		$editRacePeerDeleted = true;
+		flock($probe, LOCK_UN);
+	}
+	if ($probe !== false) {
+		fclose($probe);
+	}
+};
+$editRaceOk = $al->listMemberEdit(2, '2025550102', 2, array('number' => '2025550101', 'description' => 'new'));
+$al->testBeforeListMutationLockAcquire = null;
+check(!$editRacePeerDeleted, 'a second writer cannot get the list-mutation lock part-way through a member edit');
+$orphans = array_filter(array_keys($fp->astman->db), function ($k) { return strpos($k, '/allowlist-list/2/') === 0; });
+check(isset($fp->astman->db['/allowlist-lists/2']) || $orphans === array(), 'member edit never leaves list 2 members without list 2 metadata');
+check($editRaceOk === true && $fp->astman->db['/allowlist-list/2/2025550101'] === 'new' && !isset($fp->astman->db['/allowlist-list/2/2025550102']), 'locked member edit completes normally');
+allowlistUnitUnlinkIfExists($editRaceLock);
+
+list($fp, $al) = fresh();
+$fp->astman->db['/allowlist-lists/2'] = 'Kids';
+$fp->astman->db['/allowlist-list/2/2025550210'] = 'k';
+$fp->Blacklist->skipWrite = true;
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']) && !isset($fp->astman->db['/blacklist/2025550210']) && strpos($r['message'], 'Blacklist') !== false, 'block on a named list keeps the number when the blacklist write did not land (upstream still returns the number)');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']) && !isset($fp->astman->db['/blacklist/2025550113']), 'block on Default keeps the number when the blacklist write did not land');
+$fp->Blacklist = new class($fp->astman) { private $am; public function __construct($am) { $this->am = $am; } public function numberAdd($post) { $this->am->database_put('blacklist', $post['number'], ''); return $post['number']; } };
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']), 'block on a named list keeps the number when the blacklist entry reads back empty');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist/2025550113']), 'block on Default keeps the number when the blacklist entry reads back empty');
+unset($fp->astman->db['/blacklist/2025550210'], $fp->astman->db['/blacklist/2025550113']);
+$fp->Blacklist = new class { public $added = array(); public function numberAdd($post) { $this->added[] = $post; return false; } };
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550210']), 'block keeps the number when numberAdd reports false');
+$fp->Blacklist = new FakeBlacklist($fp->astman);
+$r = ajax($al, array('command' => 'block', 'number' => '2025550210', 'description' => 'spam', 'listId' => '2'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550210']) && $fp->astman->db['/blacklist/2025550210'] === 'spam', 'block moves a named-list number to the blacklist when the write lands');
+$fp->astman->db['/allowlist-list/2/2025550211'] = '1';
+$r = ajax($al, array('command' => 'block', 'number' => '2025550211', 'description' => '', 'listId' => '2'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist-list/2/2025550211']) && $fp->astman->db['/blacklist/2025550211'] === '1', 'block with an empty description succeeds (upstream stores 1)');
+$r = ajax($al, array('command' => 'block', 'number' => '2025550113'));
+check($r['status'] === true && !isset($fp->astman->db['/allowlist/2025550113']) && $fp->astman->db['/blacklist/2025550113'] === '1', 'block on Default with no description succeeds');
+$fp->astman->db['/allowlist-list/2/2025550194'] = 'k';
+$r = ajax($al, array('command' => 'del', 'number' => '202-555-0194', 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX del on a named list rejects a member sent in another format and keeps it');
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode(array('202-555-0194')), 'listId' => '2'));
+check($r['status'] === false && $r['deleted'] === 0 && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX bulkdelete on a named list rejects a member sent in another format and keeps it');
+$r = ajax($al, array('command' => 'del', 'number' => " 2025550194", 'listId' => '2'));
+check($r['status'] === false && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX del on a named list rejects a non-canonical form that would normalize to a member');
+$r = ajax($al, array('command' => 'bulkdelete', 'numbers' => json_encode(array("2025550194\n")), 'listId' => '2'));
+check($r['status'] === false && $r['deleted'] === 0 && isset($fp->astman->db['/allowlist-list/2/2025550194']), 'AJAX bulkdelete on a named list rejects a non-canonical form that would normalize to a member');
+
+list($fp, $al) = fresh();
+$countingAstman = new class extends FakeAstman { public $shows = 0; public function database_show($fam) { $this->shows++; return parent::database_show($fam); } };
+$countingAstman->db = $fp->astman->db;
+$fp->astman = $countingAstman;
+$al = new Allowlist($fp);
+for ($i = 2; $i <= 21; $i++) {
+	$fp->astman->db['/allowlist-lists/' . $i] = 'L' . $i;
+	$fp->astman->db['/allowlist-list/' . $i . '/20255503' . sprintf('%02d', $i)] = 'm';
+}
+$fp->astman->db['/allowlist-list/5/2025550399'] = 'm2';
+$fp->astman->db['/allowlist/did/5550505'] = '5';
+$fp->astman->db['/allowlist/autoadd/12'] = '1,0,10,5';
+$fp->astman->shows = 0;
+$summary = $al->summarizeAllowlistsForGraphql();
+check($fp->astman->shows === 3, 'list summary reads each AstDB family once (' . $fp->astman->shows . ' shows for 21 lists)');
+$byId = array_column($summary, null, 'id');
+check(count($summary) === 21 && $byId[1]['memberCount'] === 2 && $byId[5]['memberCount'] === 2 && $byId[7]['memberCount'] === 1, 'one-pass summary counts members per list');
+check($byId[5]['inboundRoutes'] === array('5550505') && $byId[5]['outboundRoutes'] === array('12') && $byId[1]['inboundRoutes'] === array('5550100/') && $byId[1]['outboundRoutes'] === array('1'), 'one-pass summary groups routes by list');
+check($al->listRoutesUsingList(5) === array('inbound' => array('5550505'), 'outbound' => array('12')) && $al->listRoutesUsingList(9) === array('inbound' => array(), 'outbound' => array()), 'listRoutesUsingList matches the summary');
+
+$js = file_get_contents($root . '/assets/js/allowlist.js');
+check(preg_match('/function alListRequest[\s\S]*?fpbxToast\(alEscapeHtml\(data\.message\)/', $js) === 1 && preg_match('/function alListRequest[\s\S]*?fpbxToast\(data\.message/', substr($js, strpos($js, 'function alListRequest'), 600)) === 0, 'Lists tab error toast escapes the server message (fpbxToast renders HTML)');
+check(strpos($js, ".data('list-") === false && substr_count($js, ".attr('data-list-name')") === 2, 'Lists tab JS reads list names with .attr(), never type-coercing .data()');
+$pot = file_get_contents($root . '/i18n/allowlist.pot');
+$missing = array();
+foreach (array('views/lists.php', 'views/algrid.php', 'views/addnumber.php', 'assets/js/allowlist.js', 'Allowlist.class.php') as $f) {
+	preg_match_all('/\b_\(\s*"((?:[^"\\\\]|\\\\.)*)"\s*\)|\b_\(\s*\'((?:[^\'\\\\]|\\\\.)*)\'\s*\)/', file_get_contents($root . '/' . $f), $mm, PREG_SET_ORDER);
+	foreach ($mm as $m) {
+		$str = isset($m[2]) && $m[2] !== '' ? stripslashes($m[2]) : stripcslashes($m[1]);
+		if (strpos($pot, 'msgid ' . json_encode($str, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === false) {
+			$missing[] = $f . ': ' . $str;
+		}
+	}
+}
+check($missing === array(), 'allowlist.pot has every _() string from the page views, JS and class' . ($missing ? ' (missing: ' . implode(' | ', array_slice($missing, 0, 5)) . ')' : ''));
+
 echo "\n$count checks, $fails failed\n";
 exit($fails ? 1 : 0);

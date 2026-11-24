@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-06-03 07:39-0400\n"
+"POT-Creation-Date: 2026-11-21 19:30-0600\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,480 +18,572 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: Console/Allowlist.class.php:80
-#: Console/Allowlist.class.php:92
+#: Allowlist.class.php:410 Allowlist.class.php:418 Allowlist.class.php:437
+#: Allowlist.class.php:574 Allowlist.class.php:630 Allowlist.class.php:1286
+#: Allowlist.class.php:1310 Allowlist.class.php:2729 Allowlist.class.php:2819
+#: Allowlist.class.php:2865 Allowlist.class.php:2886 Allowlist.class.php:2905
+#: Allowlist.class.php:2925 Allowlist.class.php:3014 Allowlist.class.php:3039
+#: Allowlist.class.php:3084
+msgid "Unknown allowlist."
+msgstr ""
+
+#: Allowlist.class.php:546
+msgid "Specify listId to assign an allowlist, or null to turn screening off."
+msgstr ""
+
+#: Allowlist.class.php:551 Allowlist.class.php:3160 Allowlist.class.php:3209
+msgid "DID and caller ID may only contain digits, + and dial-pattern characters."
+msgstr ""
+
+#: Allowlist.class.php:566
+msgid "Inbound route not found."
+msgstr ""
+
+#: Allowlist.class.php:587 Allowlist.class.php:648
+msgid "Could not format the assigned allowlist id."
+msgstr ""
+
+#: Allowlist.class.php:601
+msgid "Specify listId to assign an allowlist, or null to turn auto-add off."
+msgstr ""
+
+#: Allowlist.class.php:606
+msgid "Invalid outbound route id."
+msgstr ""
+
+#: Allowlist.class.php:622
+msgid "Outbound route not found."
+msgstr ""
+
+#: Allowlist.class.php:636
+msgid "remove and store are required when enabling outbound auto-add."
+msgstr ""
+
+#: Allowlist.class.php:688
+msgid "Could not load the allowlist entry after adding it."
+msgstr ""
+
+#: Allowlist.class.php:721
+msgid "Could not format the removed allowlist entry id."
+msgstr ""
+
+#: Allowlist.class.php:748
+msgid "Could not load the allowlist after creating it."
+msgstr ""
+
+#: Allowlist.class.php:773
+msgid "Could not load the allowlist after renaming it."
+msgstr ""
+
+#: Allowlist.class.php:790
+msgid "Could not format the deleted allowlist id."
+msgstr ""
+
+#: Allowlist.class.php:992 Allowlist.class.php:2006 Allowlist.class.php:2060
+#: Allowlist.class.php:2083 Allowlist.class.php:2168 Allowlist.class.php:2203
+#: Allowlist.class.php:2238 Allowlist.class.php:2254 Allowlist.class.php:2304
+#: Allowlist.class.php:2317 Allowlist.class.php:2396 Allowlist.class.php:2419
+#: Allowlist.class.php:2541 Allowlist.class.php:2637 Allowlist.class.php:2687
+#: Allowlist.class.php:2724 Allowlist.class.php:2814 Allowlist.class.php:2879
+#: Allowlist.class.php:2920 Allowlist.class.php:2953 Allowlist.class.php:3028
+#: Allowlist.class.php:3093 Allowlist.class.php:3166 Allowlist.class.php:3215
+#: Allowlist.class.php:3252 Allowlist.class.php:3298 Allowlist.class.php:3323
+#: Allowlist.class.php:3344 Allowlist.class.php:3382 Allowlist.class.php:3405
+#: Allowlist.class.php:3419 Allowlist.class.php:3433 Allowlist.class.php:3441
+msgid "Cannot connect to Asterisk Manager, is Asterisk running?"
+msgstr ""
+
+#: Allowlist.class.php:997
+msgid "Could not delete the setting: the Asterisk database rejected the delete."
+msgstr ""
+
+#: Allowlist.class.php:1049
 #, php-format
-msgid "<error>could not add number: %s</error>"
+msgid "Smoke cleanup failed: remove the allowlist inbound-route mapping for DID %s manually."
 msgstr ""
 
-#: Console/Allowlist.class.php:213
+#: Allowlist.class.php:1054
 #, php-format
-msgid "<error>could not delete number: %s</error>"
+msgid "Smoke cleanup failed: remove the throwaway allowlist %s manually."
 msgstr ""
 
-#: Console/Allowlist.class.php:200
+#: Allowlist.class.php:1071
+msgid "Allowlist list-mutation lock is not available: the Asterisk spool directory is missing or not writable."
+msgstr ""
+
+#: Allowlist.class.php:1079
 #, php-format
-msgid "<question>Setting allowlist destination to %s->%s = %s</question>"
+msgid "Could not open the allowlist list-mutation lock file (%s); check permissions."
 msgstr ""
 
-#: Console/Allowlist.class.php:203
-msgid "<question>Setting allowlist destination to None.</question>"
+#: Allowlist.class.php:1102 Allowlist.class.php:1136
+msgid "Another allowlist operation is in progress; try again shortly."
 msgstr ""
 
-#: Console/Allowlist.class.php:78
-#: Console/Allowlist.class.php:90
+#: Allowlist.class.php:1205
+msgid "Allow a number"
+msgstr ""
+
+#: Allowlist.class.php:1206 Allowlist.class.php:1480 Api/Gql/Allowlist.php:174
+msgid "Remove a number from the allowlist"
+msgstr ""
+
+#: Allowlist.class.php:1207
+msgid "Allow the last caller"
+msgstr ""
+
+#: Allowlist.class.php:1208 Allowlist.class.php:2444 views/general.php:25
+msgid "Allowlist"
+msgstr ""
+
+#: Allowlist.class.php:1209
+msgid "Adds a number to the Allowlist Module.  All calls from that number to the system will be allowed to proceed normally.  Manage these in the Allowlist module."
+msgstr ""
+
+#: Allowlist.class.php:1210 Allowlist.class.php:1481
+msgid "Removes a number from the Allowlist Module"
+msgstr ""
+
+#: Allowlist.class.php:1211
+msgid "Adds the last caller to the Allowlist Module.  All calls from that number to the system will be allowed to proceed normally."
+msgstr ""
+
+#: Allowlist.class.php:1273
+msgid "Your session has expired or the request was not sent from this page; reload and try again."
+msgstr ""
+
+#: Allowlist.class.php:1336
+msgid "Invalid request"
+msgstr ""
+
+#: Allowlist.class.php:1359
 #, php-format
-msgid "<question>added number: %s</question>"
+msgid "Not deleted (not allowlist numbers): %s"
 msgstr ""
 
-#: Console/Allowlist.class.php:211
+#: Allowlist.class.php:1364
+msgid "Numbers Deleted"
+msgstr ""
+
+#: Allowlist.class.php:1373 Allowlist.class.php:2156 Allowlist.class.php:2185
+#: Allowlist.class.php:3098
+msgid "Not an allowlist number."
+msgstr ""
+
+#: Allowlist.class.php:1472
+msgid "Add a number to the allowlist"
+msgstr ""
+
+#: Allowlist.class.php:1473
+msgid "Adds a number to the Allowlist Module. All calls from that number to the system will will be allowed to proceed normally. Manage these in the Allowlist module."
+msgstr ""
+
+#: Allowlist.class.php:1488
+msgid "Add the last caller to the allowlist"
+msgstr ""
+
+#: Allowlist.class.php:1489
+msgid "Adds the last caller to the Allowlist Module. All calls from that number to the system will be allowed to proceed normally."
+msgstr ""
+
+#: Allowlist.class.php:1496
+msgid "Pause or unpause Allowlist checking"
+msgstr ""
+
+#: Allowlist.class.php:1497
+msgid "Temporarily pause or unpause the Allowlist module operation system wide"
+msgstr ""
+
+#: Allowlist.class.php:1510
+msgid "Allowlist list metadata upgrade was skipped because Asterisk Manager is not connected; it will run on the next module install when the manager is available."
+msgstr ""
+
+#: Allowlist.class.php:1526
+msgid "Allowlist upgrade skipped"
+msgstr ""
+
+#: Allowlist.class.php:1557
+msgid "Your session has expired or the request was not sent from this page; nothing was changed."
+msgstr ""
+
+#: Allowlist.class.php:1608
+msgid "No Entries to export"
+msgstr ""
+
+#: Allowlist.class.php:1893
+msgid "Reset"
+msgstr ""
+
+#: Allowlist.class.php:1899
+msgid "Submit"
+msgstr ""
+
+#: Allowlist.class.php:1924
+msgid "There was an error uploading the file"
+msgstr ""
+
+#: Allowlist.class.php:1928
+msgid "The file must be in CSV format!"
+msgstr ""
+
+#: Allowlist.class.php:1935
+msgid "Could not find file after upload"
+msgstr ""
+
+#: Allowlist.class.php:1953
 #, php-format
-msgid "<question>deleted number: %s</question>"
+msgid "Imported %d entries; %d rows were rejected (invalid number or description)."
 msgstr ""
 
-#: Console/Allowlist.class.php:157
+#: Allowlist.class.php:1955
 #, php-format
-msgid "<question>toggling setting option: %s</question>"
+msgid "Imported %d entries."
 msgstr ""
 
-#: views/algrid.php:11
-msgid "Actions"
+#: Allowlist.class.php:2054 Allowlist.class.php:2892
+msgid "Could not save the number: the Asterisk database rejected the write."
+msgstr ""
+
+#: Allowlist.class.php:2088 Allowlist.class.php:3044
+msgid "The number being edited is not an allowlist number; nothing was changed."
+msgstr ""
+
+#: Allowlist.class.php:2112 Allowlist.class.php:3069
+#, php-format
+msgid "Could not remove the old number, and undoing the edit also failed: %s may still be on the allowlist alongside %s. Check both entries."
+msgstr ""
+
+#: Allowlist.class.php:2115 Allowlist.class.php:3072
+msgid "Could not remove the old number: the Asterisk database rejected the delete; nothing was changed."
+msgstr ""
+
+#: Allowlist.class.php:2132
+msgid "Invalid number: use digits only, with an optional leading +, up to 20 digits."
+msgstr ""
+
+#: Allowlist.class.php:2138
+#, php-format
+msgid "Invalid description: at most %d characters and no control characters."
+msgstr ""
+
+#: Allowlist.class.php:2161 Allowlist.class.php:2930
+msgid "Could not delete the number: the Asterisk database rejected the delete."
+msgstr ""
+
+#: Allowlist.class.php:2192 Allowlist.class.php:3104
+msgid "Description must be at most 255 characters with no control characters."
+msgstr ""
+
+#: Allowlist.class.php:2220
+msgid "Invalid destination for non-allowlisted calls; the previous destination was kept."
+msgstr ""
+
+#: Allowlist.class.php:2228
+msgid "Could not save the destination: the Asterisk database rejected the write; the previous destination was kept."
+msgstr ""
+
+#: Allowlist.class.php:2327
+msgid "Pause PIN must be 4 to 12 digits; the previous PIN was kept."
+msgstr ""
+
+#: Allowlist.class.php:2349
+#, php-format
+msgid "Allowlist did not save the %s setting: %s"
+msgstr ""
+
+#: Allowlist.class.php:2365
+msgid "Allowlist setting not saved"
+msgstr ""
+
+#: Allowlist.class.php:2445
+msgid "Import/Export Caller Allowlist"
+msgstr ""
+
+#: Allowlist.class.php:2457
+msgid "Phone Number"
+msgstr ""
+
+#: Allowlist.class.php:2458
+msgid "The number as it appears in the callerid display"
+msgstr ""
+
+#: Allowlist.class.php:2462 Console/Allowlist.class.php:138
+#: Console/Allowlist.class.php:157 Console/Allowlist.class.php:305
+#: views/addnumber.php:41 views/algrid.php:20
+msgid "Description"
+msgstr ""
+
+#: Allowlist.class.php:2463
+msgid "Description of number allowlisted"
+msgstr ""
+
+#: Allowlist.class.php:2491
+#, php-format
+msgid "row %d"
+msgstr ""
+
+#: Allowlist.class.php:2495
+msgid "Phone Number Required"
+msgstr ""
+
+#: Allowlist.class.php:2516
+#, php-format
+msgid "%d row(s) were not imported: %s"
+msgstr ""
+
+#: Allowlist.class.php:2682
+#, php-format
+msgid "Invalid allowlist name: 1 to %d characters, no control characters or slashes."
+msgstr ""
+
+#: Allowlist.class.php:2693
+#, php-format
+msgid "At most %d allowlists are supported."
+msgstr ""
+
+#: Allowlist.class.php:2699
+msgid "No allowlist id is available."
+msgstr ""
+
+#: Allowlist.class.php:2704
+msgid "Could not save the allowlist: the Asterisk database rejected the write."
+msgstr ""
+
+#: Allowlist.class.php:2719
+msgid "Invalid allowlist id or name."
+msgstr ""
+
+#: Allowlist.class.php:2734
+msgid "Could not save the allowlist name: the Asterisk database rejected the write."
+msgstr ""
+
+#: Allowlist.class.php:2804
+msgid "Invalid allowlist id."
+msgstr ""
+
+#: Allowlist.class.php:2809 views/lists.php:45
+msgid "The default allowlist cannot be deleted."
+msgstr ""
+
+#: Allowlist.class.php:2828
+#, php-format
+msgid "inbound %s"
+msgstr ""
+
+#: Allowlist.class.php:2832
+#, php-format
+msgid "outbound route id %s"
+msgstr ""
+
+#: Allowlist.class.php:2834
+#, php-format
+msgid "This allowlist is still assigned (%s). Remove those assignments first."
+msgstr ""
+
+#: Allowlist.class.php:2844
+msgid "Could not delete allowlist members: the Asterisk database rejected a delete."
+msgstr ""
+
+#: Allowlist.class.php:2851
+msgid "Could not delete the allowlist: the Asterisk database rejected the delete."
+msgstr ""
+
+#: Allowlist.class.php:2915
+msgid "Invalid number."
+msgstr ""
+
+#: Allowlist.class.php:3123
+msgid "The Blacklist module did not accept the number, so it was left on the allowlist."
+msgstr ""
+
+#: Allowlist.class.php:3172 Allowlist.class.php:3178 Allowlist.class.php:3191
+#: Allowlist.class.php:3221 Allowlist.class.php:3227 Allowlist.class.php:3235
+msgid "Invalid allowlist id for this inbound route."
+msgstr ""
+
+#: Allowlist.class.php:3186
+msgid "This inbound route already has an allowlist screening setting."
+msgstr ""
+
+#: Allowlist.class.php:3197 Allowlist.class.php:3241 Allowlist.class.php:3370
+msgid "Could not save the setting: the Asterisk database rejected the write."
+msgstr ""
+
+#: Allowlist.class.php:3338
+#, php-format
+msgid "Route id and digit counts must be whole numbers; digits to keep must be at least %d."
+msgstr ""
+
+#: Allowlist.class.php:3350 Allowlist.class.php:3356 Allowlist.class.php:3364
+msgid "Invalid allowlist id for this outbound route."
+msgstr ""
+
+#: Api/Gql/Allowlist.php:145
+msgid "Add a new number to the allowlist"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:149
+msgid "Number to allow: digits only, optional leading +, up to 20 digits"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:153
+msgid "Optional label for the number"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:157
+msgid "Allowlist to add to (defaults to the default list)"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:178
+msgid "Number to remove from the allowlist"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:182
+msgid "Allowlist to remove from (defaults to the default list)"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:199
+msgid "Create a new named allowlist"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:203
+msgid "Display name for the new allowlist"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:220
+msgid "Rename an allowlist"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:224 Api/Gql/Allowlist.php:249
+msgid "Allowlist id"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:228
+msgid "New display name"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:245
+msgid "Delete a named allowlist"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:266
+msgid "Assign allowlist screening to an inbound route, or turn screening off"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:270
+msgid "Inbound route DID"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:274
+msgid "Inbound route caller ID match (may be empty)"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:278
+msgid "Allowlist id, or null to turn screening off"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:284
+msgid "Assigned allowlist id, or null when screening is off"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:296
+msgid "Assign allowlist auto-add to an outbound route, or turn it off"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:300
+msgid "Outbound route id"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:304
+msgid "Allowlist id, or null to turn auto-add off"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:308
+msgid "Digits to remove from the start of dialed numbers (required when enabling auto-add)"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:312
+msgid "Minimum stored number length for auto-add (required when enabling auto-add)"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:318
+msgid "Assigned allowlist id, or null when auto-add is off"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:339 Api/Gql/Allowlist.php:478
+msgid "Used to manage a system wide list of allowed callers"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:343
+msgid "Allowlist to query (defaults to the default list)"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:359
+msgid "The ID"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:387 Api/Gql/Allowlist.php:407
+msgid "Allowlist Settings"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:394
+msgid "Named and default allowlists with route assignments"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:412
+msgid "Pause or unpause allowlist processing globally"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:419
+msgid "Destination for non allowlisted calls"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:428
+msgid "An allowlist (default or named)"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:445
+msgid "List name returned as stored (raw, unescaped); escape before showing in HTML."
+msgstr ""
+
+#: Api/Gql/Allowlist.php:452
+msgid "Number of members on this list"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:459
+msgid "Inbound routes using this list for screening"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:466
+msgid "Outbound routes using this list for auto-add"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:511
+msgid "The number to allow"
+msgstr ""
+
+#: Api/Gql/Allowlist.php:515
+msgid "Description of the allowed number"
+msgstr ""
+
+#: Console/Allowlist.class.php:27 views/general.php:12
+msgid "Allowlist Module"
 msgstr ""
 
 #: Console/Allowlist.class.php:29
 msgid "Add a new number to the allow list"
 msgstr ""
 
-#: Api/Gql/Allowlist.php:19
-msgid "Add a new number to the allowlist"
-msgstr ""
-
-#: Allowlist.class.php:152
-msgid "Add a number to the allowlist"
-msgstr ""
-
-#: Console/Allowlist.class.php:225
-#, php-format
-msgid "Add is not yet avaiable for '%s' coming soon!"
-msgstr ""
-
-#: views/addnumber.php:7
-msgid "Add or replace entry"
-msgstr ""
-
-#: Allowlist.class.php:168
-msgid "Add the last caller to the allowlist"
-msgstr ""
-
-#: assets/js/allowlist.js:61
-#, perl-format
-msgid "Added %s to the allowlist"
-msgstr ""
-
-#: assets/js/allowlist.js:43
-msgid "Adding..."
-msgstr ""
-
-#: Allowlist.class.php:29
-msgid ""
-"Adds a number to the Allowlist Module.  All calls from that number to the "
-"system will be allowed to proceed normally.  Manage these in the Allowlist "
-"module."
-msgstr ""
-
-#: Allowlist.class.php:153
-msgid ""
-"Adds a number to the Allowlist Module. All calls from that number to the "
-"system will will be allowed to proceed normally. Manage these in the "
-"Allowlist module."
-msgstr ""
-
-#: Allowlist.class.php:31
-msgid ""
-"Adds the last caller to the Allowlist Module.  All calls from that number to "
-"the system will be allowed to proceed normally."
-msgstr ""
-
-#: Allowlist.class.php:169
-msgid ""
-"Adds the last caller to the Allowlist Module. All calls from that number to "
-"the system will be allowed to proceed normally."
-msgstr ""
-
-#: views/algrid.php:3
-msgid "Allow Number"
-msgstr ""
-
-#: views/general.php:56
-msgid "Allow Phonebook and CM Callers"
-msgstr ""
-
-#: Allowlist.class.php:25
-msgid "Allow a number"
-msgstr ""
-
-#: Allowlist.class.php:27
-msgid "Allow the last caller"
-msgstr ""
-
-#: Allowlist.class.php:28
-#: Allowlist.class.php:785
-#: views/general.php:24
-msgid "Allowlist"
-msgstr ""
-
-#: functions.inc.php:63
-msgid "Allowlist Called Numbers"
-msgstr ""
-
-#: Console/Allowlist.class.php:27
-#: views/general.php:12
-msgid "Allowlist Module"
-msgstr ""
-
-#: Api/Gql/Allowlist.php:97
-#: Api/Gql/Allowlist.php:109
-msgid "Allowlist Settings"
-msgstr ""
-
-#: assets/js/allowlist.js:169
-msgid "Are you sure to delete the selected records?"
-msgstr ""
-
-#: assets/js/allowlist.js:102
-#, perl-format
-msgid "Are you sure you want to block this number (%s)?"
-msgstr ""
-
-#: assets/js/allowlist.js:76
-#, perl-format
-msgid "Are you sure you want to delete the number %s?"
-msgstr ""
-
-#: Console/Allowlist.class.php:103
-#: Console/Allowlist.class.php:118
-#: Console/Allowlist.class.php:301
-msgid "Auto"
-msgstr ""
-
-#: views/general.php:46
-msgid "Bulk Handler"
-msgstr ""
-
-#: Console/Allowlist.class.php:130
-#: Console/Allowlist.class.php:145
-#: Console/Allowlist.class.php:291
-msgid "CID"
-msgstr ""
-
-#: views/addnumber.php:75
-msgid "Call Date/Time"
-msgstr ""
-
-#: views/addnumber.php:69
-msgid "Call Log"
-msgstr ""
-
-#: Allowlist.class.php:602
-#: Allowlist.class.php:620
-#: Allowlist.class.php:638
-#: Allowlist.class.php:656
-#: Allowlist.class.php:681
-#: Allowlist.class.php:697
-#: Allowlist.class.php:721
-#: Allowlist.class.php:737
-#: Allowlist.class.php:760
-#: Allowlist.class.php:868
-#: Allowlist.class.php:882
-#: Allowlist.class.php:903
-#: Allowlist.class.php:915
-#: Allowlist.class.php:927
-#: Allowlist.class.php:947
-#: Allowlist.class.php:967
-#: Allowlist.class.php:987
-msgid "Cannot connect to Asterisk Manager, is Asterisk running?"
-msgstr ""
-
-#: views/general.php:71
-msgid ""
-"Check here to allow all callers in Asterisk Phonebook or Contact Manager"
-msgstr ""
-
-#: Console/Allowlist.class.php:130
-#: Console/Allowlist.class.php:145
-#: Console/Allowlist.class.php:291
-msgid "Checked"
-msgstr ""
-
-#: Console/Allowlist.class.php:132
-msgid "Choose a DID/CID to enable/disable"
-msgstr ""
-
-#: Console/Allowlist.class.php:196
-msgid "Choose a Destination"
-msgstr ""
-
-#: Console/Allowlist.class.php:177
-msgid "Choose a Module for Destinations"
-msgstr ""
-
-#: Console/Allowlist.class.php:152
-msgid "Choose a setting to enable/disable"
-msgstr ""
-
-#: Console/Allowlist.class.php:105
-msgid "Choose an Outbound Route to enable/disable"
-msgstr ""
-
-#: views/general.php:121
-msgid "Choose where non allowlisted calls go"
-msgstr ""
-
-#: views/addnumber.php:57
-msgid "Close"
-msgstr ""
-
-#: functions.inc.php:41
-msgid "Controls whether Allowlist screening is used on the Route."
-msgstr ""
-
-#: functions.inc.php:94
-msgid ""
-"Controls whether to automatically add outbound callers on this Route to the "
-"Allowlist."
-msgstr ""
-
-#: Allowlist.class.php:243
-msgid "Could not find file after upload"
-msgstr ""
-
-#: Console/Allowlist.class.php:69
-#, php-format
-msgid "Could not write to %s"
-msgstr ""
-
-#: Console/Allowlist.class.php:130
-#: Console/Allowlist.class.php:145
-#: Console/Allowlist.class.php:291
-msgid "DID"
-msgstr ""
-
-#: views/algrid.php:2
-msgid "Delete Selected"
-msgstr ""
-
 #: Console/Allowlist.class.php:30
 msgid "Delete a number from the allow list"
-msgstr ""
-
-#: Allowlist.class.php:803
-#: Console/Allowlist.class.php:130
-#: Console/Allowlist.class.php:145
-#: Console/Allowlist.class.php:291
-#: views/addnumber.php:40
-#: views/algrid.php:10
-msgid "Description"
-msgstr ""
-
-#: Allowlist.class.php:804
-msgid "Description of number allowlisted"
-msgstr ""
-
-#: Api/Gql/Allowlist.php:153
-msgid "Description of the allowed number"
-msgstr ""
-
-#: Console/Allowlist.class.php:130
-#: Console/Allowlist.class.php:145
-#: Console/Allowlist.class.php:194
-#: Console/Allowlist.class.php:291
-msgid "Destination"
-msgstr ""
-
-#: views/general.php:109
-msgid "Destination for Non AllowListed Calls"
-msgstr ""
-
-#: Api/Gql/Allowlist.php:121
-msgid "Destination for non allowlisted calls"
 msgstr ""
 
 #: Console/Allowlist.class.php:31
 msgid "Destination for non-allowlisted callers"
 msgstr ""
 
-#: Console/Allowlist.class.php:137
-#, php-format
-msgid "Disabling DID %s"
-msgstr ""
-
-#: Console/Allowlist.class.php:110
-#, php-format
-msgid "Disabling Outbound Route %s"
-msgstr ""
-
-#: functions.inc.php:26
-msgid "Enable Allowlist Screening"
-msgstr ""
-
-#: Console/Allowlist.class.php:35
-msgid "Enable/Disable settings for allow list processing"
-msgstr ""
-
-#: Console/Allowlist.class.php:140
-#, php-format
-msgid "Enabling DID %s"
-msgstr ""
-
-#: Console/Allowlist.class.php:113
-#, php-format
-msgid "Enabling Outbound Route %s"
-msgstr ""
-
-#: assets/js/allowlist.js:59
-msgid "Entry Updated"
-msgstr ""
-
-#: Console/Allowlist.class.php:37
-msgid "Export settings to file"
-msgstr ""
-
-#: Console/Allowlist.class.php:44
-#: Console/Allowlist.class.php:103
-#: Console/Allowlist.class.php:118
-#: Console/Allowlist.class.php:130
-#: Console/Allowlist.class.php:145
-#: Console/Allowlist.class.php:175
-#: Console/Allowlist.class.php:194
-#: Console/Allowlist.class.php:291
-#: Console/Allowlist.class.php:301
-msgid "ID"
-msgstr ""
-
-#: Console/Allowlist.class.php:36
-msgid "Import settings from file"
-msgstr ""
-
-#: views/general.php:29
-msgid "Import/Export"
-msgstr ""
-
-#: Allowlist.class.php:786
-msgid "Import/Export Caller Allowlist"
-msgstr ""
-
 #: Console/Allowlist.class.php:32
 msgid "List all allowlist entries"
-msgstr ""
-
-#: Console/Allowlist.class.php:175
-msgid "Module"
-msgstr ""
-
-#: Console/Allowlist.class.php:44
-#: Console/Allowlist.class.php:103
-#: Console/Allowlist.class.php:118
-#: Console/Allowlist.class.php:194
-#: Console/Allowlist.class.php:301
-msgid "Name"
-msgstr ""
-
-#: Console/Allowlist.class.php:263
-#: Console/Allowlist.class.php:267
-#: Console/Allowlist.class.php:319
-#: Console/Allowlist.class.php:337
-#: functions.inc.php:33
-#: functions.inc.php:70
-#: views/general.php:63
-#: views/general.php:89
-#: assets/js/allowlist.js:77
-#: assets/js/allowlist.js:103
-#: assets/js/allowlist.js:170
-msgid "No"
-msgstr ""
-
-#: Allowlist.class.php:271
-msgid "No Entries to export"
-msgstr ""
-
-#: views/algrid.php:9
-msgid "Number"
-msgstr ""
-
-#: assets/js/allowlist.js:89
-#, perl-format
-msgid "Number %s removed from the allowlist"
-msgstr ""
-
-#: functions.inc.php:103
-msgid "Number of digits to store"
-msgstr ""
-
-#: functions.inc.php:98
-msgid "Number of leading digits to remove"
-msgstr ""
-
-#: views/addnumber.php:18
-msgid "Number/CallerID"
-msgstr ""
-
-#: assets/js/allowlist.js:38
-msgid "Number/CallerID cannot be blank"
-msgstr ""
-
-#: Allowlist.class.php:84
-msgid "Numbers Deleted"
-msgstr ""
-
-#: Console/Allowlist.class.php:276
-msgid "Option"
-msgstr ""
-
-#: views/general.php:82
-msgid "Pause Allowlist Checking"
-msgstr ""
-
-#: views/general.php:97
-msgid "Pause or Unpause Allowlist Checking Globally"
-msgstr ""
-
-#: Allowlist.class.php:176
-msgid "Pause or unpause Allowlist checking"
-msgstr ""
-
-#: Api/Gql/Allowlist.php:114
-msgid "Pause or unpause allowlist processing globally"
-msgstr ""
-
-#: Allowlist.class.php:798
-msgid "Phone Number"
-msgstr ""
-
-#: Allowlist.class.php:830
-msgid "Phone Number Required"
-msgstr ""
-
-#: Allowlist.class.php:26
-#: Allowlist.class.php:160
-#: Api/Gql/Allowlist.php:45
-msgid "Remove a number from the allowlist"
-msgstr ""
-
-#: Allowlist.class.php:30
-#: Allowlist.class.php:161
-msgid "Removes a number from the Allowlist Module"
-msgstr ""
-
-#: Allowlist.class.php:533
-msgid "Reset"
-msgstr ""
-
-#: assets/js/allowlist.js:56
-msgid "Save Changes"
-msgstr ""
-
-#: views/addnumber.php:58
-msgid "Save changes"
 msgstr ""
 
 #: Console/Allowlist.class.php:33
@@ -502,80 +594,238 @@ msgstr ""
 msgid "Set whether autoadd to the allowlist is processed for outbound route"
 msgstr ""
 
-#: Console/Allowlist.class.php:259
+#: Console/Allowlist.class.php:35
+msgid "Enable/Disable settings for allow list processing"
+msgstr ""
+
+#: Console/Allowlist.class.php:36
+msgid "Import settings from file"
+msgstr ""
+
+#: Console/Allowlist.class.php:37
+msgid "Export settings to file"
+msgstr ""
+
+#: Console/Allowlist.class.php:38
+msgid "Smoke-test list mutation lock, list create/delete, and route assignment (creates only zz-smoke-* objects)"
+msgstr ""
+
+#: Console/Allowlist.class.php:48 Console/Allowlist.class.php:107
+#: Console/Allowlist.class.php:126 Console/Allowlist.class.php:138
+#: Console/Allowlist.class.php:157 Console/Allowlist.class.php:187
+#: Console/Allowlist.class.php:206 Console/Allowlist.class.php:305
+#: Console/Allowlist.class.php:315 views/lists.php:26
+msgid "ID"
+msgstr ""
+
+#: Console/Allowlist.class.php:48 Console/Allowlist.class.php:107
+#: Console/Allowlist.class.php:126 Console/Allowlist.class.php:206
+#: Console/Allowlist.class.php:315 views/lists.php:27
+msgid "Name"
+msgstr ""
+
+#: Console/Allowlist.class.php:73
+#, php-format
+msgid "Could not write to %s"
+msgstr ""
+
+#: Console/Allowlist.class.php:82 Console/Allowlist.class.php:94
+#, php-format
+msgid "<question>added number: %s</question>"
+msgstr ""
+
+#: Console/Allowlist.class.php:84 Console/Allowlist.class.php:96
+#, php-format
+msgid "<error>could not add number: %s</error>"
+msgstr ""
+
+#: Console/Allowlist.class.php:107 Console/Allowlist.class.php:126
+#: Console/Allowlist.class.php:315
+msgid "Auto"
+msgstr ""
+
+#: Console/Allowlist.class.php:109
+msgid "Choose an Outbound Route to enable/disable"
+msgstr ""
+
+#: Console/Allowlist.class.php:114
+#, php-format
+msgid "Disabling Outbound Route %s"
+msgstr ""
+
+#: Console/Allowlist.class.php:119
+#, php-format
+msgid "Enabling Outbound Route %s"
+msgstr ""
+
+#: Console/Allowlist.class.php:138 Console/Allowlist.class.php:157
+#: Console/Allowlist.class.php:305
+msgid "DID"
+msgstr ""
+
+#: Console/Allowlist.class.php:138 Console/Allowlist.class.php:157
+#: Console/Allowlist.class.php:305
+msgid "CID"
+msgstr ""
+
+#: Console/Allowlist.class.php:138 Console/Allowlist.class.php:157
+#: Console/Allowlist.class.php:206 Console/Allowlist.class.php:305
+msgid "Destination"
+msgstr ""
+
+#: Console/Allowlist.class.php:138 Console/Allowlist.class.php:157
+#: Console/Allowlist.class.php:305
+msgid "Checked"
+msgstr ""
+
+#: Console/Allowlist.class.php:140
+msgid "Choose a DID/CID to enable/disable"
+msgstr ""
+
+#: Console/Allowlist.class.php:145
+#, php-format
+msgid "Disabling DID %s"
+msgstr ""
+
+#: Console/Allowlist.class.php:150
+#, php-format
+msgid "Enabling DID %s"
+msgstr ""
+
+#: Console/Allowlist.class.php:164
+msgid "Choose a setting to enable/disable"
+msgstr ""
+
+#: Console/Allowlist.class.php:169
+#, php-format
+msgid "<question>toggling setting option: %s</question>"
+msgstr ""
+
+#: Console/Allowlist.class.php:187
+msgid "Module"
+msgstr ""
+
+#: Console/Allowlist.class.php:189
+msgid "Choose a Module for Destinations"
+msgstr ""
+
+#: Console/Allowlist.class.php:208
+msgid "Choose a Destination"
+msgstr ""
+
+#: Console/Allowlist.class.php:212
+#, php-format
+msgid "<question>Setting allowlist destination to %s->%s = %s</question>"
+msgstr ""
+
+#: Console/Allowlist.class.php:217
+msgid "<question>Setting allowlist destination to None.</question>"
+msgstr ""
+
+#: Console/Allowlist.class.php:225
+#, php-format
+msgid "<question>deleted number: %s</question>"
+msgstr ""
+
+#: Console/Allowlist.class.php:227
+#, php-format
+msgid "<error>could not delete number: %s</error>"
+msgstr ""
+
+#: Console/Allowlist.class.php:239
+#, php-format
+msgid "Add is not yet avaiable for '%s' coming soon!"
+msgstr ""
+
+#: Console/Allowlist.class.php:273
 msgid "Setting"
 msgstr ""
 
-#: views/general.php:34
-msgid "Settings"
-msgstr ""
-
-#: Allowlist.class.php:539
-msgid "Submit"
-msgstr ""
-
-#: Allowlist.class.php:239
-msgid "Sucessfully imported all entries"
-msgstr ""
-
-#: Allowlist.class.php:177
-msgid "Temporarily pause or unpause the Allowlist module operation system wide"
-msgstr ""
-
-#: Api/Gql/Allowlist.php:86
-msgid "The ID"
-msgstr ""
-
-#: Allowlist.class.php:248
-msgid "The file must be in CSV format!"
-msgstr ""
-
-#: Allowlist.class.php:799
-msgid "The number as it appears in the callerid display"
-msgstr ""
-
-#: Api/Gql/Allowlist.php:149
-msgid "The number to allow"
-msgstr ""
-
-#: Allowlist.class.php:214
-msgid "There was an error uploading the file"
-msgstr ""
-
-#: views/general.php:44
-msgid "This functionality is now part of the Bulk Handler Module"
-msgstr ""
-
-#: Api/Gql/Allowlist.php:75
-#: Api/Gql/Allowlist.php:130
-msgid "Used to manage a system wide list of allowed callers"
-msgstr ""
-
-#: Console/Allowlist.class.php:259
-#: Console/Allowlist.class.php:276
+#: Console/Allowlist.class.php:273 Console/Allowlist.class.php:290
 msgid "Value"
 msgstr ""
 
-#: Console/Allowlist.class.php:263
-#: Console/Allowlist.class.php:267
-#: Console/Allowlist.class.php:319
-#: Console/Allowlist.class.php:337
-#: functions.inc.php:31
-#: functions.inc.php:68
-#: views/general.php:61
-#: views/general.php:87
-#: assets/js/allowlist.js:77
-#: assets/js/allowlist.js:103
-#: assets/js/allowlist.js:170
-msgid "Yes"
-msgstr ""
-
-#: Console/Allowlist.class.php:262
+#: Console/Allowlist.class.php:276
 msgid "allow cm/phonebook known callers"
 msgstr ""
 
-#: Console/Allowlist.class.php:279
+#: Console/Allowlist.class.php:277 Console/Allowlist.class.php:281
+#: Console/Allowlist.class.php:333 Console/Allowlist.class.php:351
+#: functions.inc.php:33 functions.inc.php:70 views/general.php:72
+#: views/general.php:98
+msgid "No"
+msgstr ""
+
+#: Console/Allowlist.class.php:277 Console/Allowlist.class.php:281
+#: Console/Allowlist.class.php:333 Console/Allowlist.class.php:351
+#: functions.inc.php:31 functions.inc.php:68 views/general.php:70
+#: views/general.php:96
+msgid "Yes"
+msgstr ""
+
+#: Console/Allowlist.class.php:280
+msgid "pause allowlist processing"
+msgstr ""
+
+#: Console/Allowlist.class.php:290
+msgid "Option"
+msgstr ""
+
+#: Console/Allowlist.class.php:293
 msgid "destination for non allowed callers"
+msgstr ""
+
+#: Console/Allowlist.class.php:384
+msgid "Smoke test aborted: an allowlist did/ mapping already exists for the smoke DID; refusing to overwrite it."
+msgstr ""
+
+#: Restore.php:44
+msgid "setting contains CR, LF or NUL"
+msgstr ""
+
+#: Restore.php:67
+#, php-format
+msgid "Allowlist restore skipped %s"
+msgstr ""
+
+#: Restore.php:85
+msgid "destination is not a registered destination"
+msgstr ""
+
+#: Restore.php:90
+msgid "pause must be a time no more than 24 hours ahead"
+msgstr ""
+
+#: Restore.php:95
+msgid "debuglog must be 0 or 1"
+msgstr ""
+
+#: Restore.php:98
+msgid "knowncallers must be 0 or 1"
+msgstr ""
+
+#: Restore.php:101
+msgid "pause PIN must be 4 to 12 digits"
+msgstr ""
+
+#: Restore.php:105
+msgid "autoadd value must be 1,<int>,<int>[,<allowlist id>]"
+msgstr ""
+
+#: Restore.php:110
+msgid "did value must be a valid allowlist id"
+msgstr ""
+
+#: functions.inc.php:26
+msgid "Enable Allowlist Screening"
+msgstr ""
+
+#: functions.inc.php:41
+msgid "Controls whether Allowlist screening is used on the Route."
+msgstr ""
+
+#: functions.inc.php:63
+msgid "Allowlist Called Numbers"
 msgstr ""
 
 #: functions.inc.php:73
@@ -586,6 +836,231 @@ msgstr ""
 msgid "digits to store"
 msgstr ""
 
-#: Console/Allowlist.class.php:266
-msgid "pause allowlist processing"
+#: functions.inc.php:94
+msgid "Controls whether to automatically add outbound callers on this Route to the Allowlist."
+msgstr ""
+
+#: functions.inc.php:98
+msgid "Number of leading digits to remove"
+msgstr ""
+
+#: functions.inc.php:103
+msgid "Number of digits to store"
+msgstr ""
+
+#: functions.inc.php:127 functions.inc.php:135 functions.inc.php:149
+#: functions.inc.php:154 functions.inc.php:159
+msgid "inbound route"
+msgstr ""
+
+#: functions.inc.php:166 functions.inc.php:172 functions.inc.php:180
+#: functions.inc.php:184
+msgid "outbound route auto-add"
+msgstr ""
+
+#: views/addnumber.php:7
+msgid "Add or replace entry"
+msgstr ""
+
+#: views/addnumber.php:19
+msgid "Number/CallerID"
+msgstr ""
+
+#: views/addnumber.php:62 views/algrid.php:6
+msgid "List"
+msgstr ""
+
+#: views/addnumber.php:78
+msgid "Close"
+msgstr ""
+
+#: views/addnumber.php:79
+msgid "Save changes"
+msgstr ""
+
+#: views/addnumber.php:90
+msgid "Call Log"
+msgstr ""
+
+#: views/addnumber.php:96
+msgid "Call Date/Time"
+msgstr ""
+
+#: views/algrid.php:12
+msgid "Delete Selected"
+msgstr ""
+
+#: views/algrid.php:13
+msgid "Allow Number"
+msgstr ""
+
+#: views/algrid.php:19
+msgid "Number"
+msgstr ""
+
+#: views/algrid.php:21 views/lists.php:30
+msgid "Actions"
+msgstr ""
+
+#: views/general.php:30
+msgid "Lists"
+msgstr ""
+
+#: views/general.php:35
+msgid "Import/Export"
+msgstr ""
+
+#: views/general.php:40
+msgid "Settings"
+msgstr ""
+
+#: views/general.php:53
+msgid "This functionality is now part of the Bulk Handler Module"
+msgstr ""
+
+#: views/general.php:55
+msgid "Bulk Handler"
+msgstr ""
+
+#: views/general.php:65
+msgid "Allow Phonebook and CM Callers"
+msgstr ""
+
+#: views/general.php:80
+msgid "Check here to allow all callers in Asterisk Phonebook or Contact Manager"
+msgstr ""
+
+#: views/general.php:91
+msgid "Pause Allowlist Checking"
+msgstr ""
+
+#: views/general.php:106
+msgid "Pause or Unpause Allowlist Checking Globally"
+msgstr ""
+
+#: views/general.php:118
+msgid "Destination for Non AllowListed Calls"
+msgstr ""
+
+#: views/general.php:130
+msgid "Choose where non allowlisted calls go"
+msgstr ""
+
+#: views/general.php:142
+msgid "Pause Feature Code PIN"
+msgstr ""
+
+#: views/general.php:146
+msgid "(set; leave blank to keep)"
+msgstr ""
+
+#: views/general.php:146
+msgid "(none)"
+msgstr ""
+
+#: views/general.php:148
+msgid "Remove PIN"
+msgstr ""
+
+#: views/general.php:157
+msgid "Optional 4-12 digit PIN that callers must enter before the pause feature code toggles screening. Every pause or unpause is written to the log."
+msgstr ""
+
+#: views/lists.php:10
+msgid "New List Name"
+msgstr ""
+
+#: views/lists.php:16
+msgid "Add List"
+msgstr ""
+
+#: views/lists.php:28
+msgid "Numbers"
+msgstr ""
+
+#: views/lists.php:29
+msgid "Used By"
+msgstr ""
+
+#: views/lists.php:39
+#, php-format
+msgid "Inbound route %s"
+msgstr ""
+
+#: views/lists.php:42
+#, php-format
+msgid "Outbound route id %s"
+msgstr ""
+
+#: views/lists.php:45
+msgid "Remove this list from its routes before deleting it."
+msgstr ""
+
+#: views/lists.php:51
+msgid "Not assigned"
+msgstr ""
+
+#: views/lists.php:53
+msgid "Rename"
+msgstr ""
+
+#: views/lists.php:54
+msgid "Delete"
+msgstr ""
+
+#: assets/js/allowlist.js:58
+msgid "Number/CallerID cannot be blank"
+msgstr ""
+
+#: assets/js/allowlist.js:63
+msgid "Adding..."
+msgstr ""
+
+#: assets/js/allowlist.js:81
+msgid "Save Changes"
+msgstr ""
+
+#: assets/js/allowlist.js:84
+msgid "Entry Updated"
+msgstr ""
+
+#: assets/js/allowlist.js:86
+#, javascript-format
+msgid "Added %s to the allowlist"
+msgstr ""
+
+#: assets/js/allowlist.js:101
+#, javascript-format
+msgid "Are you sure you want to delete the number %s?"
+msgstr ""
+
+#: assets/js/allowlist.js:116
+#, javascript-format
+msgid "Number %s removed from the allowlist"
+msgstr ""
+
+#: assets/js/allowlist.js:129
+#, javascript-format
+msgid "Are you sure you want to block this number (%s)?"
+msgstr ""
+
+#: assets/js/allowlist.js:198
+msgid "Are you sure to delete the selected records?"
+msgstr ""
+
+#: assets/js/allowlist.js:247
+msgid "The request failed; reload the page and try again."
+msgstr ""
+
+#: assets/js/allowlist.js:254
+msgid "List name cannot be blank"
+msgstr ""
+
+#: assets/js/allowlist.js:262
+msgid "New name for this list"
+msgstr ""
+
+#: assets/js/allowlist.js:273
+#, javascript-format
+msgid "Delete the list %s and all of its numbers?"
 msgstr ""

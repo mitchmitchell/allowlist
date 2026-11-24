@@ -1,8 +1,18 @@
+<?php
+$alLists = isset($lists) && is_array($lists) ? $lists : array();
+$alListId = isset($listId) ? (int)$listId : 1;
+?>
 <div id="toolbar-all">
+	<label class="sr-only" for="allowlist_list"><?php echo _("List")?></label>
+	<select id="allowlist_list" class="form-control" style="display:inline-block;width:auto;">
+<?php foreach ($alLists as $alList) { ?>
+		<option value="<?php echo (int)$alList['id'] ?>"<?php echo (int)$alList['id'] === $alListId ? ' selected' : '' ?>><?php echo \FreePBX\modules\Allowlist::formatListNameForDisplay($alList['name']) ?></option>
+<?php } ?>
+	</select>
 	<button id="blkDelete" class="btn btn-danger"><?php echo _("Delete Selected")?></button>
 	<a href="#" class="btn btn-default" data-toggle="modal" data-target="#addNumber"><i class="fa fa-plus"></i>&nbsp;&nbsp;<?php echo _("Allow Number")?></a>
 </div>
-<table id="blGrid" data-escape="true" data-toolbar="#toolbar-all" data-url="ajax.php?module=allowlist&command=getJSON&jdata=grid" data-cache="false" data-maintain-selected="true" data-show-columns="true" data-show-toggle="true" data-toggle="table" data-pagination="true" data-search="true" class="table table-striped">
+<table id="blGrid" data-escape="true" data-toolbar="#toolbar-all" data-url="ajax.php?module=allowlist&command=getJSON&jdata=grid&listId=<?php echo $alListId ?>" data-cache="false" data-maintain-selected="true" data-show-columns="true" data-show-toggle="true" data-toggle="table" data-pagination="true" data-search="true" class="table table-striped">
     <thead>
         <tr>
             <th data-checkbox="true" data-formatter="cbFormatter"></th>

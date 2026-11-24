@@ -3,12 +3,27 @@ function allowlistCsrfToken() {
 	return $('#allowlist_csrf').val() || '';
 }
 
+/* The list whose members the grid is showing (1 = Default). */
+function alCurrentListId() {
+	return $('#allowlist_list').val() || '1';
+}
+
+$('#allowlist_list').on('change', function() {
+	cbrows = [];
+	$('#blGrid').bootstrapTable('refresh', {
+		url: 'ajax.php?module=allowlist&command=getJSON&jdata=grid&listId=' + encodeURIComponent(alCurrentListId())
+	});
+});
+
 $('#addNumber').on('show.bs.modal', function (e) {
 	var number = $(e.relatedTarget).data('number');
 	var description = $(e.relatedTarget).data('description');
 	$("#number").val(number);
 	$("#oldval").val(number);
 	$("#description").val(description);
+	/* Editing remembers the source list so a changed list select moves the number. */
+	$("#oldlistid").val(number !== undefined && number !== '' ? alCurrentListId() : '');
+	$("#numberlist").val(alCurrentListId());
 });
 
 $(".destdropdown ").after("<br />");
@@ -54,8 +69,12 @@ $('#submitnumber').on('click',function() {
 		action		: "add",
 		oldval		: oldv,
 		number		: num,
-		description	: desc
+		description	: desc,
+		listId		: $('#numberlist').val() || alCurrentListId()
 	};
+	if (oldv.length > 0) {
+		post_data.oldlistId = $('#oldlistid').val() || alCurrentListId();
+	}
 	$.post(window.FreePBX.ajaxurl, post_data, function(data)
 	{
 		$($this).prop("disabled",false);
@@ -88,6 +107,7 @@ $(document).on('click', '[id^="del"]', function() {
 				token	: allowlistCsrfToken(),
 				action	: "delete",
 				number	: num,
+				listId	: alCurrentListId(),
 			};
 			$.post(window.FreePBX.ajaxurl, post_data)
 			.done(function(data) {
@@ -116,6 +136,7 @@ $(document).on('click', '[id^="block"]', function() {
 				action		: "block",
 				number		: num,
 				description : des,
+				listId		: alCurrentListId(),
 			};
 			$.post(window.FreePBX.ajaxurl, post_data)
 			.done(function(data) {
@@ -183,6 +204,7 @@ $("#blkDelete").on("click", function(e) {
 					command	: 'bulkdelete',
 					token	: allowlistCsrfToken(),
 					numbers	: JSON.stringify(numbers),
+					listId	: alCurrentListId(),
 				};
 				$.post(window.FreePBX.ajaxurl, post_data)
 				.done(function() {
@@ -204,4 +226,55 @@ $("#blkDelete").on("click", function(e) {
 		);
 	}
 
+});
+
+/* Lists tab: create, rename and delete reload the page so the picker, the
+   modal select and this table are all re-rendered (and re-escaped) server side.
+   Names and ids are read with .attr(), not .data(): .data() type-coerces, so a
+   list named "1000", "true" or "[1,2]" would come back as a number, boolean or array. */
+function alListRequest(post_data) {
+	post_data.module = 'allowlist';
+	post_data.token = allowlistCsrfToken();
+	$.post(window.FreePBX.ajaxurl, post_data)
+	.done(function(data) {
+		if (data.status) {
+			window.location.reload();
+		} else {
+			/* fpbxToast renders HTML; listDelete's message can carry route ids read from AstDB. */
+			fpbxToast(alEscapeHtml(data.message), '', 'error');
+		}
+	})
+	.fail(function() {
+		fpbxToast(_('The request failed; reload the page and try again.'), '', 'error');
+	});
+}
+
+$('#listcreate').on('click', function() {
+	var name = $('#newlistname').val();
+	if (name === '') {
+		warnInvalid($('#newlistname'), _('List name cannot be blank'));
+		return;
+	}
+	alListRequest({ command: 'listcreate', name: name });
+});
+
+$(document).on('click', '[data-list-action="rename"]', function() {
+	var id = $(this).attr('data-list-id');
+	var name = prompt(_('New name for this list'), $(this).attr('data-list-name'));
+	if (name === null || name === '') {
+		return;
+	}
+	alListRequest({ command: 'listrename', listId: id, name: name });
+});
+
+$(document).on('click', '[data-list-action="delete"]', function() {
+	var id = $(this).attr('data-list-id');
+	fpbxConfirm(
+		/* fpbxConfirm renders HTML and .attr() returns the decoded name; alEscapeHtml is defined in views/algrid.php on this page. */
+		sprintf(_('Delete the list %s and all of its numbers?'), alEscapeHtml($(this).attr('data-list-name'))),
+		_("Yes"), _("No"),
+		function() {
+			alListRequest({ command: 'listdelete', listId: id });
+		}
+	);
 });

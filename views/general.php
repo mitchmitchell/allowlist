@@ -25,6 +25,11 @@ if(isset($message)){
 										<?php echo _("Allowlist")?>
 									</a>
 								</li>
+								<li role="presentation" data-name="lists" class="change-tab">
+									<a href="#lists" aria-controls="lists" role="tab" data-toggle="tab">
+										<?php echo _("Lists")?>
+									</a>
+								</li>
 								<li role="presentation" data-name="importexport" class="change-tab">
 									<a href="#importexport" aria-controls="importexport" role="tab" data-toggle="tab">
 										<?php echo _("Import/Export")?>
@@ -38,7 +43,10 @@ if(isset($message)){
 							</ul>
 								<div class="tab-content display">
 									<div role="tabpanel" id="allowlist" class="tab-pane active">
-										<?php echo load_view(__DIR__.'/algrid.php',array('allowlist' => $allowlist));?>
+										<?php echo load_view(__DIR__.'/algrid.php',array('allowlist' => $allowlist, 'lists' => isset($lists) ? $lists : array(), 'listId' => isset($listId) ? $listId : 1));?>
+									</div>
+									<div role="tabpanel" id="lists" class="tab-pane">
+										<?php echo load_view(__DIR__.'/lists.php',array('lists' => isset($lists) ? $lists : array()));?>
 									</div>
 									<div role="tabpanel" id="importexport" class="tab-pane">
 										<div class="alert alert-info">
@@ -156,7 +164,7 @@ if(isset($message)){
 					</div>
 				</div>
 				<!--Modals-->
-					<?php echo load_view(__DIR__.'/addnumber.php',array());?>
+					<?php echo load_view(__DIR__.'/addnumber.php',array('lists' => isset($lists) ? $lists : array()));?>
 				<!--Modals-->
 			</div>
 		</div>
